@@ -48,7 +48,21 @@ app.use('/api/stations', stationRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/auth', authRoutes);
 
-// Health check endpoint
+// Health check and root endpoints
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'VoltSync Backend API',
+    message: 'VoltSync API is live and operational.',
+    endpoints: {
+      stations: '/api/stations',
+      bookings: '/api/bookings',
+      auth: '/api/auth',
+      health: '/health'
+    }
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
