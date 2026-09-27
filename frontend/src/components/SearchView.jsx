@@ -1,0 +1,473 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, SlidersHorizontal, Compass, Layers, ChevronDown, ChevronUp, Flame } from 'lucide-react';
+
+const AUTOCOMPLETE_SUGGESTIONS = [
+  { name: 'Surat, Gujarat', type: 'City', lat: '21.1702', lng: '72.8311' },
+  { name: 'VR Surat Mall, Dumas Road', type: 'Landmark', lat: '21.1445', lng: '72.7712' },
+  { name: 'Adajan Junction, Surat', type: 'Locality', lat: '21.1952', lng: '72.7985' },
+  { name: 'VIP Road, Vesu, Surat', type: 'Locality', lat: '21.1350', lng: '72.7745' },
+  { name: 'Ring Road Textile Market, Surat', type: 'Hub', lat: '21.1890', lng: '72.8312' },
+  { name: 'Surat Railway Station Plaza', type: 'Transit', lat: '21.2052', lng: '72.8415' },
+  { name: 'Ghod Dod Road, Athwa', type: 'Locality', lat: '21.1765', lng: '72.8095' },
+  { name: 'Piplod Main Road, Surat', type: 'Locality', lat: '21.1530', lng: '72.7820' },
+  { name: 'Surat International Airport, Dumas', type: 'Airport', lat: '21.1150', lng: '72.7420' },
+  { name: 'Hazira Port Highway', type: 'Highway', lat: '21.1080', lng: '72.6320' },
+  { name: 'Ahmedabad, Gujarat', type: 'City', lat: '23.0225', lng: '72.5714' },
+  { name: 'Mumbai, Maharashtra', type: 'City', lat: '19.0760', lng: '72.8777' },
+  { name: 'Delhi NCR', type: 'City', lat: '28.6139', lng: '77.2090' },
+  { name: 'Bangalore, Karnataka', type: 'City', lat: '12.9716', lng: '77.5946' },
+  { name: 'Pune, Maharashtra', type: 'City', lat: '18.5204', lng: '73.8567' }
+];
+
+const SearchView = ({
+  stations,
+  searchMode,
+  setSearchMode,
+  locationName,
+  setLocationName,
+  routeStartName,
+  setRouteStartName,
+  routeEndName,
+  setRouteEndName,
+  onUseCurrentLocation,
+  connectorType,
+  setConnectorType,
+  speedMin,
+  setSpeedMin,
+  priceMax,
+  setPriceMax,
+  sortBy,
+  setSortBy,
+  selectedStation,
+  onSelectStation,
+  onBookClick,
+  onSearchSubmit,
+  onResetFilters,
+  recommendation
+}) => {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  const dropdownRef = useRef(null);
+
+  // Auto open drawer if station is selected
+  useEffect(() => {
+    if (selectedStation) {
+      setIsDrawerOpen(true);
+    }
+  }, [selectedStation]);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setLocationName(value);
+
+    if (value.trim().length > 0) {
+      const matches = AUTOCOMPLETE_SUGGESTIONS.filter(item =>
+        item.name.toLowerCase().includes(value.toLowerCase()) ||
+        item.type.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredSuggestions(matches);
+      setShowSuggestions(true);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSelectSuggestion = (item) => {
+    setLocationName(item.name);
+    setShowSuggestions(false);
+    setTimeout(() => {
+      onSearchSubmit();
+    }, 50);
+  };
+
+  const handleClearInput = () => {
+    setLocationName('');
+    setShowSuggestions(false);
+  };
+
+  return (
+    <>
+      {/* FLOATING TOP SEARCH BAR OVERLAY */}
+      <div className="floating-search-overlay">
+        <div className="floating-search-bar" ref={dropdownRef}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            
+            {/* Search Input Box */}
+            <div style={{ position: 'relative', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '0 12px', height: '42px' }}>
+                <Search size={16} style={{ color: locationName ? 'var(--accent-cyan)' : 'var(--text-muted)', marginRight: '8px' }} />
+                <input
+                  type="text"
+                  value={locationName}
+                  onChange={handleInputChange}
+                  onFocus={() => {
+                    if (locationName.trim()) {
+                      setFilteredSuggestions(AUTOCOMPLETE_SUGGESTIONS.filter(item => item.name.toLowerCase().includes(locationName.toLowerCase())));
+                      setShowSuggestions(true);
+                    }
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '13px',
+                    width: '100%',
+                    outline: 'none',
+                    fontWeight: '500'
+                  }}
+                  placeholder="Search city or charging station (e.g. Surat, VR Mall)..."
+                />
+
+                {locationName && (
+                  <button
+                    type="button"
+                    onClick={handleClearInput}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex' }}
+                    title="Clear search"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onUseCurrentLocation}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--accent-cyan)', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', marginLeft: '6px' }}
+                  title="Use GPS Location"
+                >
+                  <MapPin size={14} />
+                </button>
+              </div>
+
+              {/* Autocomplete Dropdown Popover */}
+              {showSuggestions && filteredSuggestions.length > 0 && (
+                <div className="autocomplete-dropdown">
+                  {filteredSuggestions.map((item, index) => (
+                    <div
+                      key={index}
+                      className="autocomplete-item"
+                      onClick={() => handleSelectSuggestion(item)}
+                    >
+                      <MapPin size={14} style={{ color: 'var(--accent-blue)', flexShrink: 0 }} />
+                      <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span>{item.name}</span>
+                      </div>
+                      <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: '4px' }}>
+                        {item.type}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Action Toggle Buttons */}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowFilters(!showFilters)}
+                style={{
+                  background: showFilters ? 'rgba(168, 130, 255, 0.2)' : 'rgba(255,255,255,0.05)',
+                  border: showFilters ? '1px solid var(--accent-cyan)' : '1px solid var(--glass-border)',
+                  color: showFilters ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                  borderRadius: '10px',
+                  height: '42px',
+                  padding: '0 12px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <SlidersHorizontal size={14} /> Filters {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                style={{
+                  background: isDrawerOpen ? 'var(--accent-primary)' : 'rgba(255,255,255,0.08)',
+                  color: isDrawerOpen ? '#0d1210' : 'var(--text-primary)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  height: '42px',
+                  padding: '0 14px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: isDrawerOpen ? '0 2px 8px rgba(0,0,0,0.3)' : 'none'
+                }}
+              >
+                <Layers size={14} /> {isDrawerOpen ? 'Hide Cards' : `List (${stations.length})`}
+              </button>
+            </div>
+
+          </div>
+
+          {/* Quick City Presets Row */}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', pt: '6px', borderTop: '1px solid var(--border-subtle)' }}>
+            {[
+              { label: 'Surat', query: 'Surat' },
+              { label: 'VR Mall', query: 'VR Surat Mall' },
+              { label: 'Adajan', query: 'Adajan' },
+              { label: 'Vesu VIP', query: 'VIP Road Vesu' },
+              { label: 'Ring Rd', query: 'Ring Road' },
+              { label: 'Airport', query: 'Surat Airport' },
+              { label: 'Mumbai', query: 'Mumbai' },
+              { label: 'Delhi', query: 'Delhi' }
+            ].map((chip, idx) => {
+              const isActive = locationName.toLowerCase().includes(chip.query.toLowerCase());
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setLocationName(chip.query);
+                    setTimeout(() => onSearchSubmit(), 50);
+                  }}
+                  style={{
+                    background: isActive ? 'rgba(245, 166, 35, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                    color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    borderRadius: '14px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: isActive ? '600' : '400'
+                  }}
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Expandable Filter Controls Dropdown */}
+          {showFilters && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border-subtle)' }}>
+              {/* Connector Filter */}
+              <select
+                value={connectorType}
+                onChange={(e) => setConnectorType(e.target.value)}
+                className="filter-select"
+                style={{ height: '34px', fontSize: '12px' }}
+              >
+                <option value="">All Connectors</option>
+                <option value="CCS">CCS 2 (DC Fast)</option>
+                <option value="CHAdeMO">CHAdeMO (DC)</option>
+                <option value="Type 2">Type 2 (AC)</option>
+              </select>
+
+              {/* Speed Filter */}
+              <select
+                value={speedMin}
+                onChange={(e) => setSpeedMin(e.target.value)}
+                className="filter-select"
+                style={{ height: '34px', fontSize: '12px' }}
+              >
+                <option value="">Any Speed</option>
+                <option value="22">22+ kW (AC Fast)</option>
+                <option value="50">50+ kW (DC Fast)</option>
+                <option value="120">120+ kW (Superfast)</option>
+                <option value="240">240+ kW (Ultra)</option>
+              </select>
+
+              {/* Max Price */}
+              <select
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                className="filter-select"
+                style={{ height: '34px', fontSize: '12px' }}
+              >
+                <option value="">Any Price</option>
+                <option value="15">Max 15 INR/kWh</option>
+                <option value="20">Max 20 INR/kWh</option>
+              </select>
+
+              {/* Sort Order */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="filter-select"
+                style={{ height: '34px', fontSize: '12px', borderColor: 'rgba(245, 166, 35, 0.4)', color: 'var(--accent-primary)' }}
+              >
+                <option value="distance">Sort by Distance</option>
+                <option value="price">Sort by Price</option>
+                <option value="availability">Sort by Availability</option>
+              </select>
+
+              <button
+                onClick={onResetFilters}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: '11px',
+                  marginLeft: 'auto'
+                }}
+              >
+                <RefreshCw size={11} style={{ marginRight: '4px' }} /> Reset
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* FLOATING SIDE DRAWER FOR STATION LIST */}
+      {isDrawerOpen && (
+        <div className="floating-drawer">
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                Charging Stations ({stations.length})
+              </h4>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                Showing nodes near {locationName}
+              </span>
+            </div>
+            <button
+              onClick={() => setIsDrawerOpen(false)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Smart Redirection Alert Banner */}
+          {recommendation && (
+            <div style={{ padding: '12px 16px 0 16px' }}>
+              <div className="recommendation-banner" style={{ marginTop: 0, padding: '12px' }}>
+                <div className="recommendation-title" style={{ fontSize: '12px' }}>
+                  <Sparkles size={14} /> This station is full — try this one instead
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Preferred station is full. Recommended alternate:
+                </div>
+                <div style={{ fontWeight: 'bold', fontSize: '12px' }}>{recommendation.name}</div>
+                <button
+                  onClick={() => onBookClick(recommendation)}
+                  className="action-btn"
+                  style={{ height: '30px', fontSize: '11px', marginTop: '8px' }}
+                >
+                  Book Alternate Now
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Station List Cards */}
+          <div className="station-list" style={{ padding: '16px' }}>
+            {stations.map((station) => {
+              const isSelected = selectedStation && selectedStation._id === station._id;
+              const hasFree = station.realTimeFreeCount > 0;
+              const freePercent = Math.round((station.realTimeFreeCount / station.totalChargers) * 100);
+
+              return (
+                <div
+                  key={station._id}
+                  onClick={() => onSelectStation(station)}
+                  className={`station-card ${isSelected ? 'selected' : ''} ${station.isHighDemand ? 'high-demand' : ''}`}
+                  style={{ padding: '14px' }}
+                >
+                  <div className="card-header">
+                    <div>
+                      <div className="station-name" style={{ fontSize: '14px' }}>{station.name}</div>
+                      {typeof station.distance === 'number' && (
+                        <div className="distance-badge" style={{ fontSize: '11px' }}>
+                          <MapPin size={11} /> {station.distance.toFixed(1)} km away
+                        </div>
+                      )}
+                    </div>
+                    {station.isHighDemand && (
+                      <span className="demand-badge" style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Flame size={12} /> High
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="card-details" style={{ fontSize: '12px', margin: '8px 0' }}>
+                    <div className="detail-item">
+                      <Zap size={12} style={{ color: 'var(--accent-teal)' }} />
+                      <span style={{ fontWeight: '600' }}>{station.chargingSpeedKw} kW Fast</span>
+                    </div>
+                    <div className="detail-item">
+                      {station.connectorTypes.map((c, i) => (
+                        <span key={i} className="connector-pill" style={{ fontSize: '10px' }}>
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Progress Bar for Visual Availability */}
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)' }}>
+                      <span>Availability</span>
+                      <span style={{ color: hasFree ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 'bold' }}>
+                        {station.realTimeFreeCount} / {station.totalChargers} Free
+                      </span>
+                    </div>
+                    <div className="availability-bar-container" style={{ height: '5px' }}>
+                      <div
+                        className={`availability-bar-fill ${!hasFree ? 'red' : freePercent <= 30 ? 'orange' : 'green'}`}
+                        style={{ width: `${Math.max(8, freePercent)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="card-footer">
+                    <span className="price-value" style={{ fontSize: '13px' }}>₹{station.pricingPerKwh} / kWh</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onBookClick(station);
+                      }}
+                      style={{
+                        background: hasFree ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.15)',
+                        color: hasFree ? '#0d1210' : 'var(--accent-red)',
+                        border: hasFree ? 'none' : '1px solid rgba(239, 68, 68, 0.3)',
+                        padding: '5px 12px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {hasFree ? 'Reserve' : 'Queue'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default SearchView;
+
+

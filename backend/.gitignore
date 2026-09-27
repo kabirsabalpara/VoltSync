@@ -1,0 +1,31 @@
+# VoltSync — Backend .gitignore
+
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Environment variables & secrets (CRITICAL: Never commit .env with Mongo/JWT secrets)
+.env
+.env.*
+*.env
+*.env.local
+
+# Preserve the example file
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Testing & coverage
+coverage/
+.nyc_output/
