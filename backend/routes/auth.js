@@ -10,7 +10,7 @@ const authMiddleware = require('../middleware/auth');
 // 1. POST /api/auth/signup - Register new user
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, password, phone, evModel } = req.body;
+    const { name, email, password, phone, evModel, role } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
@@ -25,13 +25,15 @@ router.post('/signup', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    const assignedRole = role === 'operator' ? 'operator' : 'driver';
+
     const user = new User({
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
       phone: phone || '',
       evModel: evModel || 'Tata Nexon EV Max',
-      role: 'driver' // public signup always creates a driver account
+      role: assignedRole
     });
 
     await user.save();
