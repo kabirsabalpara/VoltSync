@@ -798,16 +798,18 @@ body {
   display: flex;
 }
 
-/* Floating Top Search Bar Overlay */
+/* Floating Left Search Bar Overlay - Docked to left side for unobstructed map view */
 .floating-search-overlay {
   position: absolute;
   top: 16px;
-  left: 20px;
-  right: 20px;
+  left: 16px;
   z-index: 1000;
-  max-width: 900px;
-  margin: 0 auto;
+  width: 410px;
+  max-width: calc(100vw - 32px);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .floating-search-bar {
@@ -816,8 +818,8 @@ body {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(168, 130, 255, 0.28);
-  border-radius: 20px;
-  padding: 12px 16px;
+  border-radius: 18px;
+  padding: 12px 14px;
   box-shadow: 0 16px 45px rgba(0, 0, 0, 0.85), 0 0 25px rgba(168, 130, 255, 0.14);
   transition: var(--transition-normal);
 }
@@ -826,14 +828,28 @@ body {
   border-color: rgba(168, 130, 255, 0.45);
 }
 
+/* Docked Station Side Detail Card - Replaces intrusive center popup */
+.station-side-card {
+  pointer-events: auto;
+  background: rgba(16, 17, 24, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--accent-primary);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), 0 0 25px rgba(245, 166, 35, 0.15);
+  animation: slideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+}
+
 /* Floating Side Drawer for Station List */
 .floating-drawer {
   position: absolute;
-  top: 110px;
-  left: 20px;
+  top: 16px;
+  left: 440px;
   bottom: 20px;
   width: 380px;
-  max-width: calc(100vw - 40px);
+  max-width: calc(100vw - 460px);
   background: rgba(16, 17, 23, 0.95);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);

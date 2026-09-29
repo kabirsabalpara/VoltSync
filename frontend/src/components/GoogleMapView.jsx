@@ -297,7 +297,6 @@ const GoogleMapView = ({
         this.div.addEventListener('click', (e) => {
           e.stopPropagation();
           onSelectStation(this.station);
-          showStationInfoWindow(this.station, this.pos);
         });
 
         const panes = this.getPanes();
@@ -375,9 +374,9 @@ const GoogleMapView = ({
       bounds.extend(new google.maps.LatLng(lat, lng));
       hasCoords = true;
 
-      // If this station is currently selected, trigger its InfoWindow
-      if (isSelected) {
-        showStationInfoWindow(station, new google.maps.LatLng(lat, lng));
+      // Center map smoothly if selected
+      if (isSelected && map) {
+        map.panTo(new google.maps.LatLng(lat, lng));
       }
     });
 

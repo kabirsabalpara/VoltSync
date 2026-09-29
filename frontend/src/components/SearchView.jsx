@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, SlidersHorizontal, Compass, Layers, ChevronDown, ChevronUp, Flame } from 'lucide-react';
+import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, SlidersHorizontal, Compass, Layers, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 
 const AUTOCOMPLETE_SUGGESTIONS = [
   { name: 'Surat, Gujarat', type: 'City', lat: '21.1702', lng: '72.8311' },
@@ -58,15 +58,9 @@ const SearchView = ({
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
 
   const dropdownRef = useRef(null);
-
-  // Auto open drawer if station is selected
-  useEffect(() => {
-    if (selectedStation) {
-      setIsDrawerOpen(true);
-    }
-  }, [selectedStation]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -110,156 +104,209 @@ const SearchView = ({
 
   return (
     <>
-      {/* FLOATING TOP SEARCH BAR OVERLAY */}
+      {/* FLOATING LEFT SIDEBAR OVERLAY */}
       <div className="floating-search-overlay">
-        <div className="floating-search-bar" ref={dropdownRef}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            
-            {/* Search Input Box */}
-            <div style={{ position: 'relative', flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '0 12px', height: '42px' }}>
-                <Search size={16} style={{ color: locationName ? 'var(--accent-cyan)' : 'var(--text-muted)', marginRight: '8px' }} />
-                <input
-                  type="text"
-                  value={locationName}
-                  onChange={handleInputChange}
-                  onFocus={() => {
-                    if (locationName.trim()) {
-                      setFilteredSuggestions(AUTOCOMPLETE_SUGGESTIONS.filter(item => item.name.toLowerCase().includes(locationName.toLowerCase())));
-                      setShowSuggestions(true);
-                    }
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                    width: '100%',
-                    outline: 'none',
-                    fontWeight: '500'
-                  }}
-                  placeholder="Search city or charging station (e.g. Surat, VR Mall)..."
-                />
+        {isSearchCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setIsSearchCollapsed(false)}
+            title="Expand Search & Station Controls"
+            style={{
+              pointerEvents: 'auto',
+              background: 'rgba(16, 17, 24, 0.95)',
+              border: '1px solid var(--accent-primary)',
+              color: 'var(--text-primary)',
+              borderRadius: '30px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
+              width: 'fit-content'
+            }}
+          >
+            <Search size={14} style={{ color: 'var(--accent-primary)' }} />
+            <span>{locationName ? locationName.split(',')[0] : 'Search Stations'}</span>
+            <span style={{ fontSize: '10px', color: 'var(--accent-primary)', background: 'rgba(245, 166, 35, 0.15)', padding: '2px 7px', borderRadius: '10px' }}>
+              {stations.length} hubs
+            </span>
+            <ChevronRight size={14} />
+          </button>
+        ) : (
+          <div className="floating-search-bar" ref={dropdownRef}>
+            {/* Row 1: Search Input + Minimize Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0 10px', height: '38px' }}>
+                  <Search size={15} style={{ color: locationName ? 'var(--accent-cyan)' : 'var(--text-muted)', marginRight: '6px', flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    value={locationName}
+                    onChange={handleInputChange}
+                    onFocus={() => {
+                      if (locationName.trim()) {
+                        setFilteredSuggestions(AUTOCOMPLETE_SUGGESTIONS.filter(item => item.name.toLowerCase().includes(locationName.toLowerCase())));
+                        setShowSuggestions(true);
+                      }
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      width: '100%',
+                      outline: 'none',
+                      fontWeight: '500'
+                    }}
+                    placeholder="Search city or EV station..."
+                  />
 
-                {locationName && (
-                  <button
-                    type="button"
-                    onClick={handleClearInput}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex' }}
-                    title="Clear search"
-                  >
-                    <X size={15} />
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={onUseCurrentLocation}
-                  disabled={isLocating}
-                  style={{
-                    background: isLiveLocationActive 
-                      ? 'linear-gradient(135deg, rgba(245, 166, 35, 0.25), rgba(217, 119, 6, 0.25))' 
-                      : 'rgba(255,255,255,0.06)',
-                    border: isLiveLocationActive ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                    color: isLiveLocationActive ? 'var(--accent-primary)' : 'var(--accent-cyan)',
-                    padding: '0 12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    height: '32px',
-                    marginLeft: '6px',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    transition: 'all 0.2s ease',
-                    whiteSpace: 'nowrap'
-                  }}
-                  title="Detect GPS Location & Find Nearby Stations"
-                >
-                  {isLocating ? (
-                    <>
-                      <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                      <span>Locating...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Compass size={14} />
-                      <span>{isLiveLocationActive ? 'Near Me (Active)' : 'Near Me'}</span>
-                    </>
+                  {locationName && (
+                    <button
+                      type="button"
+                      onClick={handleClearInput}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                      title="Clear search"
+                    >
+                      <X size={14} />
+                    </button>
                   )}
-                </button>
+                </div>
+
+                {/* Autocomplete Dropdown Popover */}
+                {showSuggestions && filteredSuggestions.length > 0 && (
+                  <div className="autocomplete-dropdown">
+                    {filteredSuggestions.map((item, index) => (
+                      <div
+                        key={index}
+                        className="autocomplete-item"
+                        onClick={() => handleSelectSuggestion(item)}
+                      >
+                        <MapPin size={13} style={{ color: 'var(--accent-blue)', flexShrink: 0 }} />
+                        <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span>{item.name}</span>
+                        </div>
+                        <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: '4px' }}>
+                          {item.type}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Autocomplete Dropdown Popover */}
-              {showSuggestions && filteredSuggestions.length > 0 && (
-                <div className="autocomplete-dropdown">
-                  {filteredSuggestions.map((item, index) => (
-                    <div
-                      key={index}
-                      className="autocomplete-item"
-                      onClick={() => handleSelectSuggestion(item)}
-                    >
-                      <MapPin size={14} style={{ color: 'var(--accent-blue)', flexShrink: 0 }} />
-                      <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <span>{item.name}</span>
-                      </div>
-                      <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: '4px' }}>
-                        {item.type}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Minimize button to tuck away panel */}
+              <button
+                type="button"
+                onClick={() => setIsSearchCollapsed(true)}
+                title="Minimize panel for clear map view"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-muted)',
+                  borderRadius: '10px',
+                  height: '38px',
+                  width: '38px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0
+                }}
+              >
+                <ChevronLeft size={16} />
+              </button>
             </div>
 
-            {/* Quick Action Toggle Buttons */}
-            <div style={{ display: 'flex', gap: '6px' }}>
+            {/* Row 2: Near Me GPS + Filters + List Drawer */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                onClick={onUseCurrentLocation}
+                disabled={isLocating}
+                style={{
+                  flex: 1.3,
+                  background: isLiveLocationActive 
+                    ? 'linear-gradient(135deg, #f5a623, #d97706)' 
+                    : 'rgba(255,255,255,0.05)',
+                  border: isLiveLocationActive ? '1px solid #fff' : '1px solid var(--glass-border)',
+                  color: isLiveLocationActive ? '#0d1210' : 'var(--accent-primary)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '5px',
+                  height: '32px',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap'
+                }}
+                title="Detect GPS Location & Find Nearby Stations"
+              >
+                {isLocating ? (
+                  <>
+                    <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                    <span>Locating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Compass size={13} />
+                    <span>{isLiveLocationActive ? 'Near Me (Active)' : 'Near Me'}</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowFilters(!showFilters)}
                 style={{
+                  flex: 1,
                   background: showFilters ? 'rgba(168, 130, 255, 0.2)' : 'rgba(255,255,255,0.05)',
                   border: showFilters ? '1px solid var(--accent-cyan)' : '1px solid var(--glass-border)',
                   color: showFilters ? 'var(--accent-cyan)' : 'var(--text-primary)',
-                  borderRadius: '10px',
-                  height: '42px',
-                  padding: '0 12px',
-                  fontSize: '12px',
+                  borderRadius: '8px',
+                  height: '32px',
+                  padding: '0 8px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  justifyContent: 'center',
+                  gap: '4px'
                 }}
               >
-                <SlidersHorizontal size={14} /> Filters {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                <SlidersHorizontal size={12} /> Filters {showFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsDrawerOpen(!isDrawerOpen)}
                 style={{
+                  flex: 1,
                   background: isDrawerOpen ? 'var(--accent-primary)' : 'rgba(255,255,255,0.08)',
                   color: isDrawerOpen ? '#0d1210' : 'var(--text-primary)',
                   border: 'none',
-                  borderRadius: '10px',
-                  height: '42px',
-                  padding: '0 14px',
-                  fontSize: '12px',
+                  borderRadius: '8px',
+                  height: '32px',
+                  padding: '0 8px',
+                  fontSize: '11px',
                   fontWeight: 'bold',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: isDrawerOpen ? '0 2px 8px rgba(0,0,0,0.3)' : 'none'
+                  justifyContent: 'center',
+                  gap: '4px'
                 }}
               >
-                <Layers size={14} /> {isDrawerOpen ? 'Hide Cards' : `List (${stations.length})`}
+                <Layers size={12} /> {isDrawerOpen ? 'Close' : `List (${stations.length})`}
               </button>
             </div>
-
-          </div>
 
           {/* Dedicated Proximity Radius Selector Strip */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '10px', pt: '6px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
@@ -415,6 +462,73 @@ const SearchView = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* Docked Station Side Detail Card */}
+        {selectedStation && (
+          <div className="station-side-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                  {selectedStation.name}
+                </div>
+                {typeof selectedStation.distance === 'number' && (
+                  <div style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <MapPin size={11} /> {selectedStation.distance.toFixed(1)} km away {selectedStation.drivingMinutes ? `• ~${selectedStation.drivingMinutes} min drive` : ''}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectStation(null)}
+                title="Close"
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Badges */}
+            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              <span style={{ fontSize: '10px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                ⚡ {selectedStation.chargingSpeedKw} kW Fast DC
+              </span>
+              <span style={{ fontSize: '10px', background: 'rgba(52, 211, 153, 0.15)', color: 'var(--accent-green)', border: '1px solid rgba(52, 211, 153, 0.3)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                ₹{selectedStation.pricingPerKwh}/kWh
+              </span>
+              <span style={{ fontSize: '10px', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '4px' }}>
+                {selectedStation.connectorTypes?.join(', ')}
+              </span>
+              <span style={{ fontSize: '10px', color: (selectedStation.realTimeFreeCount || 0) > 0 ? '#10b981' : '#f43f5e', fontWeight: 'bold', marginLeft: 'auto' }}>
+                {selectedStation.realTimeFreeCount || 0}/{selectedStation.totalChargers || 4} Free
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => onBookClick(selectedStation)}
+                className="action-btn"
+                style={{ flex: 2, height: '34px', fontSize: '12px', padding: '0 10px' }}
+              >
+                Reserve Slot
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const lat = selectedStation.location.coordinates[1];
+                  const lng = selectedStation.location.coordinates[0];
+                  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
+                }}
+                className="nav-btn"
+                style={{ flex: 1, height: '34px', fontSize: '12px', justifyContent: 'center' }}
+              >
+                Navigate
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* FLOATING SIDE DRAWER FOR STATION LIST */}
