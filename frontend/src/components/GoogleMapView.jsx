@@ -133,7 +133,7 @@ const GoogleMapView = ({
   const [mapType, setMapType] = useState('dark'); // dark | satellite
   const [showTraffic, setShowTraffic] = useState(false);
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCag8TfW0XqGwROZOuG6WYjLFhMlRM9sFc';
 
   // 1. Initialize Google Maps
   useEffect(() => {
