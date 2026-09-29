@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Zap, MapPin, Navigation, ArrowUpRight } from 'lucide-react';
+import { Zap, MapPin, Navigation, ArrowUpRight, Compass, RefreshCw, Layers } from 'lucide-react';
+import GoogleMapView from './GoogleMapView';
 
 // Custom Labeled HTML Badge for map pins
 const createLabeledMarker = (station, isSelected) => {
@@ -111,11 +112,120 @@ const FitBoundsView = ({ stations, userLocation }) => {
   return null;
 };
 
-const MapView = ({ stations, userLocation, selectedStation, onSelectStation, routeCoords, onBookClick }) => {
+const MapView = ({ 
+  stations, 
+  userLocation, 
+  selectedStation, 
+  onSelectStation, 
+  routeCoords, 
+  onBookClick,
+  radius,
+  isLiveLocationActive,
+  onLocateMe,
+  isLocating
+}) => {
+  const [engine, setEngine] = useState('google'); // 'google' | 'leaflet'
   const center = userLocation || [21.1702, 72.8311]; // Default Surat
+
+  if (engine === 'google') {
+    return (
+      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+        <GoogleMapView
+          stations={stations}
+          userLocation={userLocation}
+          selectedStation={selectedStation}
+          onSelectStation={onSelectStation}
+          routeCoords={routeCoords}
+          onBookClick={onBookClick}
+          radius={radius}
+          isLiveLocationActive={isLiveLocationActive}
+          onLocateMe={onLocateMe}
+          isLocating={isLocating}
+          onError={() => {
+            console.warn('Google Maps JS API error, switching to Leaflet');
+            setEngine('leaflet');
+          }}
+          onSwitchToLeaflet={() => setEngine('leaflet')}
+        />
+
+        {/* Engine Switcher / Status Pill */}
+        <div style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          zIndex: 60,
+          background: 'rgba(16, 17, 24, 0.92)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '24px',
+          padding: '4px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
+        }}>
+          <span style={{ fontSize: '11px', color: '#10b981', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+            Google Maps Active
+          </span>
+          <button
+            type="button"
+            onClick={() => setEngine('leaflet')}
+            title="Switch to Leaflet Open Tiles"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '11px',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              padding: '2px 4px'
+            }}
+          >
+            Switch to Leaflet
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* Switch back to Google Maps pill */}
+      <div style={{
+        position: 'absolute',
+        top: '20px',
+        right: '20px',
+        zIndex: 1000,
+        background: 'rgba(16, 17, 24, 0.92)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: '24px',
+        padding: '4px 10px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
+      }}>
+        <span style={{ fontSize: '11px', color: '#f5a623', fontWeight: '700' }}>
+          Leaflet Tiles
+        </span>
+        <button
+          type="button"
+          onClick={() => setEngine('google')}
+          style={{
+            background: 'var(--accent-primary)',
+            color: '#0d1210',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '3px 8px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            cursor: 'pointer'
+          }}
+        >
+          Use Google Maps
+        </button>
+      </div>
+
       <MapContainer
         center={center}
         zoom={13}
@@ -131,12 +241,27 @@ const MapView = ({ stations, userLocation, selectedStation, onSelectStation, rou
         {/* Auto fit map bounds */}
         <FitBoundsView stations={stations} userLocation={userLocation} />
 
+        {/* User Proximity Radius Circle */}
+        {userLocation && isLiveLocationActive && radius && radius !== 'all' && (
+          <Circle
+            center={userLocation}
+            radius={Number(radius) * 1000}
+            pathOptions={{
+              color: '#f5a623',
+              fillColor: '#f5a623',
+              fillOpacity: 0.08,
+              weight: 2,
+              dashArray: '6, 6'
+            }}
+          />
+        )}
+
         {/* User GPS Location Marker */}
         {userLocation && (
           <Marker position={userLocation} icon={createUserMarker()}>
             <Popup>
               <div style={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}>
-                Your Current Location
+                📍 Your Current Location
               </div>
             </Popup>
           </Marker>
@@ -189,6 +314,9 @@ const MapView = ({ stations, userLocation, selectedStation, onSelectStation, rou
                     <div>Charging Speed: <b style={{ color: 'var(--accent-teal)' }}>{station.chargingSpeedKw} kW Fast DC</b></div>
                     <div>Price Rate: <b style={{ color: '#10b981' }}>₹{station.pricingPerKwh} / kWh</b></div>
                     <div>Connectors: <b>{station.connectorTypes.join(', ')}</b></div>
+                    {typeof station.distance === 'number' && (
+                      <div>Proximity: <b style={{ color: 'var(--accent-primary)' }}>{station.distance.toFixed(1)} km away {station.drivingMinutes ? `(~${station.drivingMinutes} min drive)` : ''}</b></div>
+                    )}
                     <div>
                       Availability: <span style={{ color: hasFree ? '#10b981' : '#f43f5e', fontWeight: 'bold' }}>
                         {station.realTimeFreeCount} of {station.totalChargers} Free
@@ -245,6 +373,47 @@ const MapView = ({ stations, userLocation, selectedStation, onSelectStation, rou
           );
         })}
       </MapContainer>
+
+      {/* Floating GPS Radar / Locate Me Button */}
+      {onLocateMe && (
+        <button
+          type="button"
+          onClick={onLocateMe}
+          disabled={isLocating}
+          title="Detect Live GPS Location and Find Nearby Stations"
+          style={{
+            position: 'absolute',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 1000,
+            background: isLiveLocationActive ? 'linear-gradient(135deg, #f5a623, #d97706)' : 'rgba(16, 17, 24, 0.92)',
+            border: isLiveLocationActive ? '2px solid #fff' : '1px solid rgba(245, 166, 35, 0.5)',
+            color: isLiveLocationActive ? '#0d1210' : 'var(--accent-primary)',
+            borderRadius: '50px',
+            padding: '10px 18px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            transition: 'all 0.25s ease'
+          }}
+        >
+          {isLocating ? (
+            <>
+              <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Scanning GPS...</span>
+            </>
+          ) : (
+            <>
+              <Compass size={16} />
+              <span>{isLiveLocationActive ? `Nearby Radar Active (${radius && radius !== 'all' ? radius + 'km' : 'All'})` : 'Find Stations Near Me'}</span>
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 };

@@ -180,6 +180,88 @@ const seedData = async () => {
         liveQueueLength: 0
       },
       {
+        name: 'Tata Power EZ Charge - Sumul Dairy Road, Katargam',
+        location: {
+          type: 'Point',
+          coordinates: [72.8378, 21.2268] // Exact location from Google Maps link
+        },
+        connectorTypes: ['CCS', 'Type 2'],
+        chargingSpeedKw: 150,
+        pricingPerKwh: 16,
+        chargers: [
+          { id: 'SM1', status: 'free' },
+          { id: 'SM2', status: 'free' },
+          { id: 'SM3', status: 'free' },
+          { id: 'SM4', status: 'occupied' }
+        ],
+        liveQueueLength: 0
+      },
+      {
+        name: 'Jio-bp Pulse HyperCharge - Gotalawadi Industrial Area',
+        location: {
+          type: 'Point',
+          coordinates: [72.8392, 21.2255] // Gotalawadi, Katargam
+        },
+        connectorTypes: ['CCS', 'CHAdeMO'],
+        chargingSpeedKw: 240,
+        pricingPerKwh: 19,
+        chargers: [
+          { id: 'GT1', status: 'free' },
+          { id: 'GT2', status: 'free' },
+          { id: 'GT3', status: 'free' },
+          { id: 'GT4', status: 'free' }
+        ],
+        liveQueueLength: 0
+      },
+      {
+        name: 'Statiq EV Supercharge - Katargam Main Darwaja',
+        location: {
+          type: 'Point',
+          coordinates: [72.8358, 21.2285] // Katargam Main Road
+        },
+        connectorTypes: ['CCS', 'Type 2'],
+        chargingSpeedKw: 60,
+        pricingPerKwh: 13,
+        chargers: [
+          { id: 'KD1', status: 'free' },
+          { id: 'KD2', status: 'free' },
+          { id: 'KD3', status: 'free' }
+        ],
+        liveQueueLength: 0
+      },
+      {
+        name: 'Zeon Fast Charging - Ved Road Causeway Link',
+        location: {
+          type: 'Point',
+          coordinates: [72.8340, 21.2312] // Ved Road, Surat
+        },
+        connectorTypes: ['CCS', 'Type 2'],
+        chargingSpeedKw: 120,
+        pricingPerKwh: 15,
+        chargers: [
+          { id: 'VRD1', status: 'free' },
+          { id: 'VRD2', status: 'free' },
+          { id: 'VRD3', status: 'occupied' }
+        ],
+        liveQueueLength: 0
+      },
+      {
+        name: 'Ather Grid Hub - Gotalawadi Textile Complex',
+        location: {
+          type: 'Point',
+          coordinates: [72.8405, 21.2272] // Gotalawadi, Surat
+        },
+        connectorTypes: ['Type 2', 'CCS'],
+        chargingSpeedKw: 22,
+        pricingPerKwh: 11,
+        chargers: [
+          { id: 'AG1', status: 'free' },
+          { id: 'AG2', status: 'free' },
+          { id: 'AG3', status: 'free' }
+        ],
+        liveQueueLength: 0
+      },
+      {
         name: 'Tata Power EZ Charge - Surat International Airport',
         location: {
           type: 'Point',

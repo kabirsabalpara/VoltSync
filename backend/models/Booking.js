@@ -29,6 +29,31 @@ const BookingSchema = new mongoose.Schema({
   paymentIntentId: { 
     type: String 
   },
+  paymentGateway: {
+    type: String,
+    enum: ['razorpay', 'sandbox', 'stripe', 'wallet'],
+    default: 'sandbox'
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['upi', 'card', 'netbanking', 'wallet'],
+    default: 'upi'
+  },
+  paymentOrderId: {
+    type: String
+  },
+  paymentSignature: {
+    type: String
+  },
+  invoiceNumber: {
+    type: String
+  },
+  taxBreakdown: {
+    baseAmount: { type: Number, default: 0 },
+    gstAmount: { type: Number, default: 0 },
+    cessAmount: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 }
+  },
   userEmail: { 
     type: String, 
     required: true 

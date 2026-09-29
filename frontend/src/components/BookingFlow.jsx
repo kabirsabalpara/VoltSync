@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Clock, ShieldCheck, CreditCard, CheckCircle, AlertTriangle, BatteryCharging, Car, QrCode, ArrowRight, Download, MapPin, Zap, Smartphone } from 'lucide-react';
 import { API_BASE_URL } from '../config';
+import PaymentGatewayModal from './PaymentGatewayModal';
 
 const EV_MODELS = [
   { name: 'Tata Nexon EV Max', batteryKwh: 40.5, speedCapKw: 50 },
@@ -204,6 +205,28 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
   };
 
   const ticketRef = `VS-${station.name.substring(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  // STEP 2: FULL PAYMENT GATEWAY (UPI QR, Cards with 3D Secure, Netbanking, EV Wallet)
+  if (step === 'payment') {
+    return (
+      <PaymentGatewayModal
+        station={station}
+        bookingId={bookingId}
+        chargerId={chargerId}
+        slotTime={selectedSlot?.slotTime}
+        energyKwh={energyKwhNeeded}
+        userEmail={userEmail}
+        onClose={handleClose}
+        onPaymentSuccess={(confirmedBooking) => {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setStep('success');
+          if (onBookingSuccess) {
+            onBookingSuccess(confirmedBooking);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div className="modal-overlay">

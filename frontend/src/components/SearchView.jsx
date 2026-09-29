@@ -3,6 +3,9 @@ import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, Slider
 
 const AUTOCOMPLETE_SUGGESTIONS = [
   { name: 'Surat, Gujarat', type: 'City', lat: '21.1702', lng: '72.8311' },
+  { name: 'Sumul Dairy Road, Katargam', type: 'Hub', lat: '21.2268', lng: '72.8378' },
+  { name: 'Katargam Darwaja, Surat', type: 'Locality', lat: '21.2285', lng: '72.8358' },
+  { name: 'Ved Road, Katargam', type: 'Locality', lat: '21.2312', lng: '72.8340' },
   { name: 'VR Surat Mall, Dumas Road', type: 'Landmark', lat: '21.1445', lng: '72.7712' },
   { name: 'Adajan Junction, Surat', type: 'Locality', lat: '21.1952', lng: '72.7985' },
   { name: 'VIP Road, Vesu, Surat', type: 'Locality', lat: '21.1350', lng: '72.7745' },
@@ -30,6 +33,11 @@ const SearchView = ({
   routeEndName,
   setRouteEndName,
   onUseCurrentLocation,
+  isLocating,
+  radius,
+  setRadius,
+  isLiveLocationActive,
+  nearestStation,
   connectorType,
   setConnectorType,
   speedMin,
@@ -146,10 +154,39 @@ const SearchView = ({
                 <button
                   type="button"
                   onClick={onUseCurrentLocation}
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--accent-cyan)', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', marginLeft: '6px' }}
-                  title="Use GPS Location"
+                  disabled={isLocating}
+                  style={{
+                    background: isLiveLocationActive 
+                      ? 'linear-gradient(135deg, rgba(245, 166, 35, 0.25), rgba(217, 119, 6, 0.25))' 
+                      : 'rgba(255,255,255,0.06)',
+                    border: isLiveLocationActive ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                    color: isLiveLocationActive ? 'var(--accent-primary)' : 'var(--accent-cyan)',
+                    padding: '0 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    height: '32px',
+                    marginLeft: '6px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    transition: 'all 0.2s ease',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Detect GPS Location & Find Nearby Stations"
                 >
-                  <MapPin size={14} />
+                  {isLocating ? (
+                    <>
+                      <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Locating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Compass size={14} />
+                      <span>{isLiveLocationActive ? 'Near Me (Active)' : 'Near Me'}</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -223,42 +260,82 @@ const SearchView = ({
 
           </div>
 
-          {/* Quick City Presets Row */}
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', pt: '6px', borderTop: '1px solid var(--border-subtle)' }}>
-            {[
-              { label: 'Surat', query: 'Surat' },
-              { label: 'VR Mall', query: 'VR Surat Mall' },
-              { label: 'Adajan', query: 'Adajan' },
-              { label: 'Vesu VIP', query: 'VIP Road Vesu' },
-              { label: 'Ring Rd', query: 'Ring Road' },
-              { label: 'Airport', query: 'Surat Airport' },
-              { label: 'Mumbai', query: 'Mumbai' },
-              { label: 'Delhi', query: 'Delhi' }
-            ].map((chip, idx) => {
-              const isActive = locationName.toLowerCase().includes(chip.query.toLowerCase());
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setLocationName(chip.query);
-                    setTimeout(() => onSearchSubmit(), 50);
-                  }}
-                  style={{
-                    background: isActive ? 'rgba(245, 166, 35, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
-                    color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                    borderRadius: '14px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    fontWeight: isActive ? '600' : '400'
-                  }}
-                >
-                  {chip.label}
-                </button>
-              );
-            })}
+          {/* Dedicated Proximity Radius Selector Strip */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '10px', pt: '6px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+              <Navigation size={12} style={{ color: 'var(--accent-primary)' }} />
+              <span style={{ fontWeight: '600' }}>Nearby Radius:</span>
+              {[
+                { label: '3 km', val: '3' },
+                { label: '5 km', val: '5' },
+                { label: '10 km', val: '10' },
+                { label: '25 km', val: '25' },
+                { label: '50 km', val: '50' },
+                { label: 'All', val: 'all' }
+              ].map((r) => {
+                const isSelected = radius === r.val;
+                return (
+                  <button
+                    key={r.val}
+                    type="button"
+                    onClick={() => {
+                      setRadius(r.val);
+                      setTimeout(() => onSearchSubmit(), 20);
+                    }}
+                    style={{
+                      background: isSelected ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',
+                      color: isSelected ? '#0d1210' : 'var(--text-secondary)',
+                      border: isSelected ? 'none' : '1px solid var(--border-subtle)',
+                      borderRadius: '12px',
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      fontWeight: isSelected ? '700' : '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick City Presets */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {[
+                { label: 'Surat', query: 'Surat' },
+                { label: 'Sumul Dairy', query: 'Sumul Dairy Road, Katargam' },
+                { label: 'Katargam', query: 'Katargam Darwaja' },
+                { label: 'VR Mall', query: 'VR Surat Mall' },
+                { label: 'Adajan', query: 'Adajan' },
+                { label: 'Mumbai', query: 'Mumbai' },
+                { label: 'Delhi', query: 'Delhi' }
+              ].map((chip, idx) => {
+                const isActive = locationName.toLowerCase().includes(chip.query.toLowerCase()) && !isLiveLocationActive;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setLocationName(chip.query);
+                      setTimeout(() => onSearchSubmit(), 50);
+                    }}
+                    style={{
+                      background: isActive ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                      border: isActive ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+                      color: isActive ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                      borderRadius: '12px',
+                      padding: '2px 8px',
+                      fontSize: '10px',
+                      cursor: 'pointer',
+                      fontWeight: isActive ? '600' : '400'
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Expandable Filter Controls Dropdown */}
@@ -379,24 +456,43 @@ const SearchView = ({
 
           {/* Station List Cards */}
           <div className="station-list" style={{ padding: '16px' }}>
-            {stations.map((station) => {
+            {stations.map((station, idx) => {
               const isSelected = selectedStation && selectedStation._id === station._id;
               const hasFree = station.realTimeFreeCount > 0;
               const freePercent = Math.round((station.realTimeFreeCount / station.totalChargers) * 100);
+              const isNearest = (nearestStation && nearestStation._id === station._id) || (idx === 0 && typeof station.distance === 'number');
 
               return (
                 <div
                   key={station._id}
                   onClick={() => onSelectStation(station)}
                   className={`station-card ${isSelected ? 'selected' : ''} ${station.isHighDemand ? 'high-demand' : ''}`}
-                  style={{ padding: '14px' }}
+                  style={{ padding: '14px', position: 'relative' }}
                 >
+                  {isNearest && typeof station.distance === 'number' && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(245, 166, 35, 0.25), rgba(217, 119, 6, 0.25))',
+                      border: '1px solid var(--accent-primary)',
+                      color: 'var(--accent-primary)',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginBottom: '8px'
+                    }}>
+                      <Zap size={11} fill="var(--accent-primary)" /> #1 NEAREST CHARGING NODE
+                    </div>
+                  )}
+
                   <div className="card-header">
                     <div>
                       <div className="station-name" style={{ fontSize: '14px' }}>{station.name}</div>
                       {typeof station.distance === 'number' && (
-                        <div className="distance-badge" style={{ fontSize: '11px' }}>
-                          <MapPin size={11} /> {station.distance.toFixed(1)} km away
+                        <div className="distance-badge" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <MapPin size={11} /> {station.distance.toFixed(1)} km away {station.drivingMinutes ? `• ~${station.drivingMinutes} min drive` : ''}
                         </div>
                       )}
                     </div>
@@ -437,26 +533,52 @@ const SearchView = ({
                     </div>
                   </div>
 
-                  <div className="card-footer">
+                  <div className="card-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                     <span className="price-value" style={{ fontSize: '13px' }}>₹{station.pricingPerKwh} / kWh</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onBookClick(station);
-                      }}
-                      style={{
-                        background: hasFree ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.15)',
-                        color: hasFree ? '#0d1210' : 'var(--accent-red)',
-                        border: hasFree ? 'none' : '1px solid rgba(239, 68, 68, 0.3)',
-                        padding: '5px 12px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {hasFree ? 'Reserve' : 'Queue'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const [lng, lat] = station.location.coordinates;
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
+                        }}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-subtle)',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Get directions on Google Maps"
+                      >
+                        <Navigation size={11} /> Maps
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onBookClick(station);
+                        }}
+                        style={{
+                          background: hasFree ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.15)',
+                          color: hasFree ? '#0d1210' : 'var(--accent-red)',
+                          border: hasFree ? 'none' : '1px solid rgba(239, 68, 68, 0.3)',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {hasFree ? 'Reserve' : 'Queue'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

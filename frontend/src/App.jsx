@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Library, BarChart3, Mail, RefreshCw, Zap, LogIn, LogOut, User as UserIcon, ShieldCheck, QrCode } from 'lucide-react';
+import { MapPin, Library, BarChart3, Mail, RefreshCw, Zap, LogIn, LogOut, User as UserIcon, ShieldCheck, QrCode, Compass } from 'lucide-react';
 import MapView from './components/MapView';
 import SearchView from './components/SearchView';
 import BookingFlow from './components/BookingFlow';
@@ -7,6 +7,7 @@ import OperatorDashboard from './components/OperatorDashboard';
 import AuthModal from './components/AuthModal';
 import FastPassModal from './components/FastPassModal';
 import { API_BASE_URL } from './config';
+import { getCurrentCoordinates, reverseGeocode } from './services/locationService';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('search'); // search -> bookings -> dashboard
@@ -32,7 +33,10 @@ const App = () => {
   // Search parameters (Radius Coords)
   const [userLat, setUserLat] = useState('21.1702'); // Default Surat
   const [userLng, setUserLng] = useState('72.8311');
-  const [radius, setRadius] = useState('all'); // Show all possible, closest first
+  const [radius, setRadius] = useState('15'); // 15 km default nearby radius
+  const [isLocating, setIsLocating] = useState(false);
+  const [isLiveLocationActive, setIsLiveLocationActive] = useState(false);
+  const [nearestStation, setNearestStation] = useState(null);
 
   // Search parameters (Route Coords)
   const [startLat, setStartLat] = useState('21.1952'); // Adajan Surat
@@ -92,6 +96,12 @@ const App = () => {
     if (!q) return null;
 
     // Direct city & demo point dictionary for instant, reliable lookups
+    if (q.includes('sumul') || q.includes('gotalawadi') || q.includes('ved road')) {
+      return { lat: '21.2268', lng: '72.8378' };
+    }
+    if (q.includes('katargam')) {
+      return { lat: '21.2285', lng: '72.8358' };
+    }
     if (q.includes('surat')) {
       return { lat: '21.1702', lng: '72.8311' };
     }
@@ -145,10 +155,12 @@ const App = () => {
       const sLngVal = overrides.startLng || startLng;
       const eLatVal = overrides.endLat || endLat;
       const eLngVal = overrides.endLng || endLng;
+      const radVal = overrides.radius !== undefined ? overrides.radius : radius;
+      const cityVal = overrides.cityName || locationName;
 
       let url = `${API_BASE_URL}/stations?`;
       if (mode === 'radius') {
-        url += `lat=${latVal}&lng=${lngVal}&radius=${radius}&cityName=${encodeURIComponent(locationName)}`;
+        url += `lat=${latVal}&lng=${lngVal}&radius=${radVal}&cityName=${encodeURIComponent(cityVal)}`;
       } else {
         // Route-based search endpoint
         url = `${API_BASE_URL}/stations/route?startLat=${sLatVal}&startLng=${sLngVal}&endLat=${eLatVal}&endLng=${eLngVal}`;
@@ -163,7 +175,21 @@ const App = () => {
       const data = await response.json();
       
       if (response.ok) {
-        setStations(data);
+        const stationList = Array.isArray(data) ? data : (data.stations || []);
+        setStations(stationList);
+
+        // Compute and track the #1 nearest station
+        if (stationList.length > 0) {
+          const withDist = [...stationList].filter(s => typeof s.distance === 'number');
+          if (withDist.length > 0) {
+            withDist.sort((a, b) => a.distance - b.distance);
+            setNearestStation(withDist[0]);
+          } else {
+            setNearestStation(stationList[0]);
+          }
+        } else {
+          setNearestStation(null);
+        }
       }
     } catch (error) {
       console.error('Error fetching stations:', error);
@@ -259,6 +285,7 @@ const App = () => {
   };
 
   const handleSearchSubmit = async () => {
+    setIsLiveLocationActive(false);
     if (searchMode === 'radius') {
       const coords = await geocodeLocation(locationName);
       if (coords) {
@@ -267,7 +294,8 @@ const App = () => {
         fetchStations({
           searchMode: 'radius',
           userLat: coords.lat,
-          userLng: coords.lng
+          userLng: coords.lng,
+          cityName: locationName
         });
       } else {
         alert(`Could not resolve location: "${locationName}". Please try another search term.`);
@@ -294,28 +322,38 @@ const App = () => {
     }
   };
 
-  const handleUseCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const latStr = position.coords.latitude.toString();
-          const lngStr = position.coords.longitude.toString();
-          setUserLat(latStr);
-          setUserLng(lngStr);
-          setLocationName("Your Current Location");
-          fetchStations({
-            searchMode: 'radius',
-            userLat: latStr,
-            userLng: lngStr
-          });
-        },
-        (error) => {
-          console.error("Geolocation error", error);
-          alert("Error getting location. Ensure permissions are enabled.");
-        }
-      );
-    } else {
-      alert("Geolocation is not supported by your browser.");
+  const handleUseCurrentLocation = async (overrideRadius) => {
+    setIsLocating(true);
+    try {
+      // 1. Get browser GPS position with high accuracy
+      const coords = await getCurrentCoordinates({ enableHighAccuracy: true });
+      const latStr = coords.lat.toString();
+      const lngStr = coords.lng.toString();
+
+      setUserLat(latStr);
+      setUserLng(lngStr);
+      setIsLiveLocationActive(true);
+
+      // 2. Reverse geocode to get real locality/city name
+      const geoInfo = await reverseGeocode(coords.lat, coords.lng);
+      const friendlyName = geoInfo.name || `Live GPS (${coords.lat.toFixed(3)}, ${coords.lng.toFixed(3)})`;
+      setLocationName(friendlyName);
+
+      const rad = overrideRadius !== undefined ? overrideRadius : radius;
+
+      // 3. Fetch nearby stations around the live GPS coordinates
+      await fetchStations({
+        searchMode: 'radius',
+        userLat: latStr,
+        userLng: lngStr,
+        radius: rad,
+        cityName: friendlyName
+      });
+    } catch (err) {
+      console.error("Location error:", err);
+      alert(err.message || "Could not retrieve GPS location. Please check browser permissions.");
+    } finally {
+      setIsLocating(false);
     }
   };
 
@@ -412,6 +450,10 @@ const App = () => {
                 end: [Number(endLat), Number(endLng)]
               } : null}
               onBookClick={handleBookClick}
+              radius={radius}
+              isLiveLocationActive={isLiveLocationActive}
+              onLocateMe={handleUseCurrentLocation}
+              isLocating={isLocating}
             />
 
             {/* Floating Top Search Bar Overlay & Collapsible List Drawer */}
@@ -426,6 +468,11 @@ const App = () => {
               routeEndName={routeEndName}
               setRouteEndName={setRouteEndName}
               onUseCurrentLocation={handleUseCurrentLocation}
+              isLocating={isLocating}
+              radius={radius}
+              setRadius={setRadius}
+              isLiveLocationActive={isLiveLocationActive}
+              nearestStation={nearestStation}
               connectorType={connectorType}
               setConnectorType={setConnectorType}
               speedMin={speedMin}

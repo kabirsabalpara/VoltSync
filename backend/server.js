@@ -6,6 +6,7 @@ const seedData = require('./config/seed');
 const stationRoutes = require('./routes/stations');
 const bookingRoutes = require('./routes/bookings');
 const authRoutes = require('./routes/auth');
+const paymentRoutes = require('./routes/payments');
 const Station = require('./models/Station');
 
 const app = express();
@@ -47,6 +48,7 @@ app.use(express.json());
 app.use('/api/stations', stationRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Health check and root endpoints
 app.get('/', (req, res) => {
@@ -56,8 +58,10 @@ app.get('/', (req, res) => {
     message: 'VoltSync API is live and operational.',
     endpoints: {
       stations: '/api/stations',
+      nearbyStations: '/api/stations/nearby',
       bookings: '/api/bookings',
       auth: '/api/auth',
+      payments: '/api/payments',
       health: '/health'
     }
   });
