@@ -96,7 +96,7 @@ const App = () => {
     const q = query.toLowerCase().trim();
     if (!q) return null;
 
-    // Direct city & demo point dictionary for instant, reliable lookups
+    // Direct Gujarat & India cities dictionary for instant, ultra-reliable lookups
     if (q.includes('sumul') || q.includes('gotalawadi') || q.includes('ved road')) {
       return { lat: '21.2268', lng: '72.8378' };
     }
@@ -106,8 +106,17 @@ const App = () => {
     if (q.includes('surat')) {
       return { lat: '21.1702', lng: '72.8311' };
     }
-    if (q.includes('ahmedabad')) {
+    if (q.includes('ahmedabad') || q.includes('gujarat') || q.includes('guja')) {
       return { lat: '23.0225', lng: '72.5714' };
+    }
+    if (q.includes('gandhinagar') || q.includes('gift city')) {
+      return { lat: '23.2156', lng: '72.6369' };
+    }
+    if (q.includes('vadodara') || q.includes('baroda')) {
+      return { lat: '22.3072', lng: '73.1812' };
+    }
+    if (q.includes('rajkot')) {
+      return { lat: '22.3039', lng: '70.8022' };
     }
     if (q.includes('mumbai')) {
       return { lat: '19.0760', lng: '72.8777' };
@@ -117,6 +126,12 @@ const App = () => {
     }
     if (q.includes('pune')) {
       return { lat: '18.5204', lng: '73.8567' };
+    }
+    if (q.includes('bangalore') || q.includes('bengaluru')) {
+      return { lat: '12.9716', lng: '77.5946' };
+    }
+    if (q.includes('hyderabad')) {
+      return { lat: '17.3850', lng: '78.4867' };
     }
     if (q.includes('station a') || q.includes('mall')) {
       return { lat: '12.9736', lng: '77.5976' };
@@ -130,15 +145,20 @@ const App = () => {
     if (q.includes('station d') || q.includes('highway') || q.includes('rest stop')) {
       return { lat: '12.9016', lng: '77.4946' };
     }
-    if (q.includes('bangalore') || q.includes('bengaluru')) {
-      return { lat: '12.9716', lng: '77.5946' };
-    }
 
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+      // First try geocoding with India country code restriction so we never land in Europe
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&limit=1`);
       const data = await res.json();
       if (data && data.length > 0) {
         return { lat: data[0].lat, lng: data[0].lon };
+      }
+
+      // Fallback without country code restriction
+      const fallbackRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+      const fallbackData = await fallbackRes.json();
+      if (fallbackData && fallbackData.length > 0) {
+        return { lat: fallbackData[0].lat, lng: fallbackData[0].lon };
       }
     } catch (e) {
       console.error("Geocoding service error", e);
@@ -318,31 +338,39 @@ const App = () => {
     });
   };
 
-  const handleSearchSubmit = async () => {
+  const handleSearchSubmit = async (customQuery, directCoords) => {
+    // If called from form onSubmit, customQuery might be an event object
+    const queryStr = (typeof customQuery === 'string' && customQuery.trim()) 
+      ? customQuery.trim() 
+      : locationName;
+
     if (searchMode === 'radius') {
-      if (isLiveLocationActive && locationName.includes('Live GPS')) {
+      if (isLiveLocationActive && queryStr.includes('Live GPS')) {
         fetchStations({
           searchMode: 'radius',
           userLat,
           userLng,
           radius,
-          cityName: locationName
+          cityName: queryStr
         });
         return;
       }
       setIsLiveLocationActive(false);
-      const coords = await geocodeLocation(locationName);
+
+      const coords = directCoords || await geocodeLocation(queryStr);
       if (coords) {
         setUserLat(coords.lat);
         setUserLng(coords.lng);
+        setLocationName(queryStr);
         fetchStations({
           searchMode: 'radius',
           userLat: coords.lat,
           userLng: coords.lng,
-          cityName: locationName
+          radius,
+          cityName: queryStr
         });
       } else {
-        alert(`Could not resolve location: "${locationName}". Please try another search term.`);
+        alert(`Could not resolve location: "${queryStr}". Please try another search term.`);
       }
     } else {
       // Route corridor search geocoding

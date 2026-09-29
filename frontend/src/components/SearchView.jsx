@@ -92,9 +92,8 @@ const SearchView = ({
   const handleSelectSuggestion = (item) => {
     setLocationName(item.name);
     setShowSuggestions(false);
-    setTimeout(() => {
-      onSearchSubmit();
-    }, 50);
+    const coords = (item.lat && item.lng) ? { lat: item.lat, lng: item.lng } : null;
+    onSearchSubmit(item.name, coords);
   };
 
   const handleClearInput = () => {
@@ -140,12 +139,32 @@ const SearchView = ({
             {/* Row 1: Search Input + Minimize Toggle */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <div style={{ position: 'relative', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0 10px', height: '38px' }}>
-                  <Search size={15} style={{ color: locationName ? 'var(--accent-cyan)' : 'var(--text-muted)', marginRight: '6px', flexShrink: 0 }} />
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setShowSuggestions(false);
+                    onSearchSubmit(locationName);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0 10px', height: '38px' }}
+                >
+                  <button
+                    type="submit"
+                    title="Search location"
+                    style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    <Search size={15} style={{ color: locationName ? 'var(--accent-cyan)' : 'var(--text-muted)', marginRight: '6px', flexShrink: 0 }} />
+                  </button>
                   <input
                     type="text"
                     value={locationName}
                     onChange={handleInputChange}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        setShowSuggestions(false);
+                        onSearchSubmit(locationName);
+                      }
+                    }}
                     onFocus={() => {
                       if (locationName.trim()) {
                         setFilteredSuggestions(AUTOCOMPLETE_SUGGESTIONS.filter(item => item.name.toLowerCase().includes(locationName.toLowerCase())));
@@ -174,7 +193,7 @@ const SearchView = ({
                       <X size={14} />
                     </button>
                   )}
-                </div>
+                </form>
 
                 {/* Autocomplete Dropdown Popover */}
                 {showSuggestions && filteredSuggestions.length > 0 && (
@@ -355,13 +374,14 @@ const SearchView = ({
             {/* Quick City Presets */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
               {[
-                { label: 'Surat', query: 'Surat' },
-                { label: 'Sumul Dairy', query: 'Sumul Dairy Road, Katargam' },
-                { label: 'Katargam', query: 'Katargam Darwaja' },
-                { label: 'VR Mall', query: 'VR Surat Mall' },
-                { label: 'Adajan', query: 'Adajan' },
-                { label: 'Mumbai', query: 'Mumbai' },
-                { label: 'Delhi', query: 'Delhi' }
+                { label: 'Surat', query: 'Surat', lat: '21.1702', lng: '72.8311' },
+                { label: 'Ahmedabad', query: 'Ahmedabad, Gujarat', lat: '23.0225', lng: '72.5714' },
+                { label: 'Sumul Dairy', query: 'Sumul Dairy Road, Katargam', lat: '21.2268', lng: '72.8378' },
+                { label: 'Katargam', query: 'Katargam Darwaja', lat: '21.2285', lng: '72.8358' },
+                { label: 'VR Mall', query: 'VR Surat Mall', lat: '21.1440', lng: '72.7720' },
+                { label: 'Adajan', query: 'Adajan', lat: '21.1960', lng: '72.7950' },
+                { label: 'Mumbai', query: 'Mumbai', lat: '19.0760', lng: '72.8777' },
+                { label: 'Delhi', query: 'Delhi', lat: '28.6139', lng: '77.2090' }
               ].map((chip, idx) => {
                 const isActive = locationName.toLowerCase().includes(chip.query.toLowerCase()) && !isLiveLocationActive;
                 return (
@@ -370,7 +390,8 @@ const SearchView = ({
                     type="button"
                     onClick={() => {
                       setLocationName(chip.query);
-                      setTimeout(() => onSearchSubmit(), 50);
+                      const coords = (chip.lat && chip.lng) ? { lat: chip.lat, lng: chip.lng } : null;
+                      onSearchSubmit(chip.query, coords);
                     }}
                     style={{
                       background: isActive ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.03)',

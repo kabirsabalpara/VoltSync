@@ -16,6 +16,93 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 export const RAW_STATIONS_DATA = [
+  // --- AHMEDABAD / GUJARAT EV HUBS ---
+  {
+    _id: 'st_amd_1',
+    name: 'Tata Power EZ Charge - SG Highway, Bodakdev',
+    location: { type: 'Point', coordinates: [72.5078, 23.0416] },
+    connectorTypes: ['CCS', 'Type 2'],
+    chargingSpeedKw: 150,
+    pricingPerKwh: 16,
+    chargers: [
+      { id: 'TP_AMD1', status: 'free' },
+      { id: 'TP_AMD2', status: 'free' },
+      { id: 'TP_AMD3', status: 'free' },
+      { id: 'TP_AMD4', status: 'occupied' }
+    ],
+    liveQueueLength: 0
+  },
+  {
+    _id: 'st_amd_2',
+    name: 'Jio-bp Pulse HyperCharge - Prahlad Nagar Hub',
+    location: { type: 'Point', coordinates: [72.5074, 23.0125] },
+    connectorTypes: ['CCS', 'CHAdeMO'],
+    chargingSpeedKw: 240,
+    pricingPerKwh: 18,
+    chargers: [
+      { id: 'JB_AMD1', status: 'free' },
+      { id: 'JB_AMD2', status: 'free' },
+      { id: 'JB_AMD3', status: 'free' },
+      { id: 'JB_AMD4', status: 'free' }
+    ],
+    liveQueueLength: 0
+  },
+  {
+    _id: 'st_amd_3',
+    name: 'Statiq EV Station - Riverfront West, Ashram Road',
+    location: { type: 'Point', coordinates: [72.5714, 23.0300] },
+    connectorTypes: ['CCS', 'Type 2'],
+    chargingSpeedKw: 120,
+    pricingPerKwh: 14,
+    chargers: [
+      { id: 'ST_AMD1', status: 'free' },
+      { id: 'ST_AMD2', status: 'free' },
+      { id: 'ST_AMD3', status: 'occupied' }
+    ],
+    liveQueueLength: 1
+  },
+  {
+    _id: 'st_amd_4',
+    name: 'Zeon Superfast Charging - Sindhu Bhavan Road (SBR)',
+    location: { type: 'Point', coordinates: [72.4965, 23.0440] },
+    connectorTypes: ['CCS'],
+    chargingSpeedKw: 240,
+    pricingPerKwh: 19,
+    chargers: [
+      { id: 'ZN_AMD1', status: 'free' },
+      { id: 'ZN_AMD2', status: 'free' },
+      { id: 'ZN_AMD3', status: 'free' }
+    ],
+    liveQueueLength: 0
+  },
+  {
+    _id: 'st_amd_5',
+    name: 'Shell Recharge - Vastrapur Lake AlphaOne',
+    location: { type: 'Point', coordinates: [72.5280, 23.0350] },
+    connectorTypes: ['CCS', 'Type 2'],
+    chargingSpeedKw: 60,
+    pricingPerKwh: 15,
+    chargers: [
+      { id: 'SH_AMD1', status: 'free' },
+      { id: 'SH_AMD2', status: 'free' }
+    ],
+    liveQueueLength: 0
+  },
+  {
+    _id: 'st_amd_6',
+    name: 'Adani Total Gas EV - Airport Circle, Hansol',
+    location: { type: 'Point', coordinates: [72.6280, 23.0730] },
+    connectorTypes: ['CCS', 'CHAdeMO'],
+    chargingSpeedKw: 150,
+    pricingPerKwh: 16,
+    chargers: [
+      { id: 'AD_AMD1', status: 'free' },
+      { id: 'AD_AMD2', status: 'free' },
+      { id: 'AD_AMD3', status: 'free' },
+      { id: 'AD_AMD4', status: 'occupied' }
+    ],
+    liveQueueLength: 0
+  },
   // --- KATARGAM / SUMUL DAIRY / VED ROAD / GOTALAWADI (User Maps Link) ---
   {
     _id: 'st_kat_1',
