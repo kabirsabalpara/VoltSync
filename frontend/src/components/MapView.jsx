@@ -288,10 +288,13 @@ const MapView = ({
 
         {/* Station Labeled Markers */}
         {stations.map((station) => {
-          const lat = station.location.coordinates[1];
-          const lng = station.location.coordinates[0];
+          if (!station?.location?.coordinates || station.location.coordinates.length < 2) return null;
+          const lat = Number(station.location.coordinates[1]);
+          const lng = Number(station.location.coordinates[0]);
+          if (isNaN(lat) || isNaN(lng)) return null;
+
           const isSelected = selectedStation && selectedStation._id === station._id;
-          const hasFree = station.realTimeFreeCount > 0;
+          const hasFree = (station.realTimeFreeCount || 0) > 0;
 
           return (
             <Marker

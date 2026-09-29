@@ -50,6 +50,7 @@ const SearchView = ({
   onSelectStation,
   onBookClick,
   onSearchSubmit,
+  onRadiusChange,
   onResetFilters,
   recommendation
 }) => {
@@ -280,7 +281,11 @@ const SearchView = ({
                     type="button"
                     onClick={() => {
                       setRadius(r.val);
-                      setTimeout(() => onSearchSubmit(), 20);
+                      if (onRadiusChange) {
+                        onRadiusChange(r.val);
+                      } else {
+                        setTimeout(() => onSearchSubmit(), 20);
+                      }
                     }}
                     style={{
                       background: isSelected ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',

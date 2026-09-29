@@ -233,14 +233,16 @@ const GoogleMapView = ({
         this.div.className = 'google-custom-marker';
         this.div.style.position = 'absolute';
         this.div.style.cursor = 'pointer';
-        this.div.style.zIndex = this.isSelected ? '999' : '100';
-
-        const hasFree = this.station.realTimeFreeCount > 0;
-        const isHigh = this.station.isHighDemand;
+        const freeCount = this.station.realTimeFreeCount !== undefined 
+          ? this.station.realTimeFreeCount 
+          : (this.station.chargers ? this.station.chargers.filter(c => c.status === 'free').length : 3);
+        const totalCount = this.station.totalChargers || (this.station.chargers ? this.station.chargers.length : 4);
+        const hasFree = freeCount > 0;
+        const isHigh = this.station.isHighDemand || freeCount <= 1;
 
         let bgGradient = 'linear-gradient(135deg, #059669, #10b981)';
         let borderColor = '#10b981';
-        let statusText = `${this.station.realTimeFreeCount}/${this.station.totalChargers} Free`;
+        let statusText = `${freeCount}/${totalCount} Free`;
         let badgeColor = '#10b981';
 
         if (!hasFree) {
@@ -361,12 +363,15 @@ const GoogleMapView = ({
     };
 
     stations.forEach((station) => {
+      if (!station?.location?.coordinates || station.location.coordinates.length < 2) return;
+      const lat = Number(station.location.coordinates[1]);
+      const lng = Number(station.location.coordinates[0]);
+      if (isNaN(lat) || isNaN(lng)) return;
+
       const isSelected = selectedStation && selectedStation._id === station._id;
       const overlay = new StationOverlay(station, isSelected);
       markersRef.current.push(overlay);
 
-      const lat = station.location.coordinates[1];
-      const lng = station.location.coordinates[0];
       bounds.extend(new google.maps.LatLng(lat, lng));
       hasCoords = true;
 

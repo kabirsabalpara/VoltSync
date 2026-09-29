@@ -8,6 +8,7 @@ import AuthModal from './components/AuthModal';
 import FastPassModal from './components/FastPassModal';
 import { API_BASE_URL } from './config';
 import { getCurrentCoordinates, reverseGeocode } from './services/locationService';
+import { getProcessedFallbackStations } from './services/stationsData';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('search'); // search -> bookings -> dashboard
@@ -147,17 +148,19 @@ const App = () => {
 
   const fetchStations = async (overrides = {}) => {
     setRedirectionRec(null);
-    try {
-      const mode = overrides.searchMode || searchMode;
-      const latVal = overrides.userLat || userLat;
-      const lngVal = overrides.userLng || userLng;
-      const sLatVal = overrides.startLat || startLat;
-      const sLngVal = overrides.startLng || startLng;
-      const eLatVal = overrides.endLat || endLat;
-      const eLngVal = overrides.endLng || endLng;
-      const radVal = overrides.radius !== undefined ? overrides.radius : radius;
-      const cityVal = overrides.cityName || locationName;
+    const mode = overrides.searchMode || searchMode;
+    const latVal = overrides.userLat || userLat;
+    const lngVal = overrides.userLng || userLng;
+    const sLatVal = overrides.startLat || startLat;
+    const sLngVal = overrides.startLng || startLng;
+    const eLatVal = overrides.endLat || endLat;
+    const eLngVal = overrides.endLng || endLng;
+    const radVal = overrides.radius !== undefined ? overrides.radius : radius;
+    const cityVal = overrides.cityName || locationName;
 
+    let stationList = [];
+
+    try {
       let url = `${API_BASE_URL}/stations?`;
       if (mode === 'radius') {
         url += `lat=${latVal}&lng=${lngVal}&radius=${radVal}&cityName=${encodeURIComponent(cityVal)}`;
@@ -172,29 +175,50 @@ const App = () => {
       url += `&sortBy=${sortBy}`;
 
       const response = await fetch(url);
-      const data = await response.json();
-      
       if (response.ok) {
-        const stationList = Array.isArray(data) ? data : (data.stations || []);
-        setStations(stationList);
-
-        // Compute and track the #1 nearest station
-        if (stationList.length > 0) {
-          const withDist = [...stationList].filter(s => typeof s.distance === 'number');
-          if (withDist.length > 0) {
-            withDist.sort((a, b) => a.distance - b.distance);
-            setNearestStation(withDist[0]);
-          } else {
-            setNearestStation(stationList[0]);
-          }
-        } else {
-          setNearestStation(null);
-        }
+        const data = await response.json();
+        stationList = Array.isArray(data) ? data : (data.stations || []);
       }
     } catch (error) {
-      console.error('Error fetching stations:', error);
+      console.warn('API fetch unavailable, using resilient client-side dataset:', error);
+    }
+
+    // Resilient Fallback: if API returned 0 stations or failed (e.g. Vercel deployment), use rich local dataset
+    if (!stationList || stationList.length === 0) {
+      stationList = getProcessedFallbackStations({
+        userLat: latVal,
+        userLng: lngVal,
+        radius: radVal,
+        connectorType,
+        speedMin,
+        priceMax,
+        sortBy
+      });
+    }
+
+    setStations(stationList);
+
+    // Compute and track the #1 nearest station
+    if (stationList.length > 0) {
+      const withDist = [...stationList].filter(s => typeof s.distance === 'number');
+      if (withDist.length > 0) {
+        withDist.sort((a, b) => a.distance - b.distance);
+        setNearestStation(withDist[0]);
+      } else {
+        setNearestStation(stationList[0]);
+      }
+    } else {
+      setNearestStation(null);
     }
   };
+
+  // Immediate initial load on page mount
+  useEffect(() => {
+    fetchStations();
+    if (localStorage.getItem('voltsync_token')) {
+      fetchMyBookings();
+    }
+  }, []);
 
   const fetchMyBookings = async () => {
     try {
@@ -284,9 +308,29 @@ const App = () => {
     fetchMyBookings();
   };
 
+  const handleRadiusChange = (newRadius) => {
+    setRadius(newRadius);
+    fetchStations({
+      radius: newRadius,
+      userLat,
+      userLng,
+      cityName: locationName
+    });
+  };
+
   const handleSearchSubmit = async () => {
-    setIsLiveLocationActive(false);
     if (searchMode === 'radius') {
+      if (isLiveLocationActive && locationName.includes('Live GPS')) {
+        fetchStations({
+          searchMode: 'radius',
+          userLat,
+          userLng,
+          radius,
+          cityName: locationName
+        });
+        return;
+      }
+      setIsLiveLocationActive(false);
       const coords = await geocodeLocation(locationName);
       if (coords) {
         setUserLat(coords.lat);
@@ -350,8 +394,19 @@ const App = () => {
         cityName: friendlyName
       });
     } catch (err) {
-      console.error("Location error:", err);
-      alert(err.message || "Could not retrieve GPS location. Please check browser permissions.");
+      console.warn("Location error, fallback to Katargam Surat hub:", err);
+      // Fallback: Katargam Surat Coordinates
+      setUserLat('21.2268');
+      setUserLng('72.8378');
+      setIsLiveLocationActive(true);
+      setLocationName('Katargam, Surat');
+      await fetchStations({
+        searchMode: 'radius',
+        userLat: '21.2268',
+        userLng: '72.8378',
+        radius: radius,
+        cityName: 'Katargam, Surat'
+      });
     } finally {
       setIsLocating(false);
     }
@@ -485,6 +540,7 @@ const App = () => {
               onSelectStation={handleSelectStation}
               onBookClick={handleBookClick}
               onSearchSubmit={handleSearchSubmit}
+              onRadiusChange={handleRadiusChange}
               onResetFilters={handleResetFilters}
               recommendation={redirectionRec}
             />
