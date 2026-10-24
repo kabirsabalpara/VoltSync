@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { MapPin, Library, BarChart3, Mail, RefreshCw, Zap, LogIn, LogOut, User as UserIcon, ShieldCheck, QrCode, Compass } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MapPin, Library, BarChart3, Zap, LogIn, LogOut, User as UserIcon, QrCode, Globe } from 'lucide-react';
+
 import MapView from './components/MapView';
 import SearchView from './components/SearchView';
 import BookingFlow from './components/BookingFlow';
@@ -10,23 +11,40 @@ import { API_BASE_URL } from './config';
 import { getCurrentCoordinates, reverseGeocode } from './services/locationService';
 import { getProcessedFallbackStations } from './services/stationsData';
 
+// Lazy-load Three.js 3D Globe experience to prevent heavy initial bundle
+const GlobeIntro = React.lazy(() => import('./components/GlobeIntro'));
+
+
 const App = () => {
   const [activeTab, setActiveTab] = useState('search'); // search -> bookings -> dashboard
   
-  // Auth state
+  // 3D Globe Experience State
+  const [showGlobe, setShowGlobe] = useState(() => {
+    try {
+      return !localStorage.getItem('voltsync_skip_globe');
+    } catch (e) {
+      return false;
+    }
+  });
+
+  // Auth state: Start visitors as guests (null) instead of demo driver
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('voltsync_user');
-      return saved ? JSON.parse(saved) : { name: 'Alex Driver', email: 'driver@example.com', evModel: 'Tata Nexon EV Max', role: 'driver' };
+      return saved ? JSON.parse(saved) : null;
     } catch (e) {
-      return { name: 'Alex Driver', email: 'driver@example.com', evModel: 'Tata Nexon EV Max', role: 'driver' };
+      return null;
     }
   });
-  const [userEmail, setUserEmail] = useState(user ? user.email : 'driver@example.com');
+  const [userEmail, setUserEmail] = useState(user ? user.email : '');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [pendingBookingStation, setPendingBookingStation] = useState(null);
 
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
+  const [searchStatus, setSearchStatus] = useState('idle'); // idle | loading | success | no-results | service-unavailable | sample-mode
+  const [isSampleMode, setIsSampleMode] = useState(false);
+  const searchAbortControllerRef = useRef(null);
   
   // Search Mode (radius or route)
   const [searchMode, setSearchMode] = useState('radius');
@@ -67,6 +85,33 @@ const App = () => {
   const [myBookings, setMyBookings] = useState([]);
   const [viewingPassBooking, setViewingPassBooking] = useState(null);
 
+  // Session validation on mount via /auth/me
+  useEffect(() => {
+    const token = localStorage.getItem('voltsync_token');
+    if (token) {
+      fetch(`${API_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((res) => {
+          if (res.ok) return res.json();
+          throw new Error('Session expired');
+        })
+        .then((userData) => {
+          const current = userData.user || userData;
+          setUser(current);
+          setUserEmail(current.email);
+          localStorage.setItem('voltsync_user', JSON.stringify(current));
+        })
+        .catch(() => {
+          // Token expired or invalid
+          setUser(null);
+          setUserEmail('');
+          localStorage.removeItem('voltsync_user');
+          localStorage.removeItem('voltsync_token');
+        });
+    }
+  }, []);
+
   // Handle Auth Login/Signup Success
   const handleAuthSuccess = (userData, token) => {
     setUser(userData);
@@ -76,8 +121,12 @@ const App = () => {
       if (token) localStorage.setItem('voltsync_token', token);
     } catch (e) {}
     
-    // Auto switch to Operator Portal if operator role
-    if (userData.role === 'operator') {
+    // If user was waiting to book a station before logging in, proceed with booking
+    if (pendingBookingStation) {
+      setBookingStation(pendingBookingStation);
+      setIsBookingOpen(true);
+      setPendingBookingStation(null);
+    } else if (userData.role === 'operator') {
       setActiveTab('dashboard');
     }
   };
@@ -85,6 +134,7 @@ const App = () => {
   const handleLogout = () => {
     setUser(null);
     setUserEmail('');
+    setMyBookings([]);
     try {
       localStorage.removeItem('voltsync_user');
       localStorage.removeItem('voltsync_token');
@@ -97,6 +147,7 @@ const App = () => {
     if (!q) return null;
 
     // Direct Gujarat & India cities dictionary for instant, ultra-reliable lookups
+    // Specific city/locality checks FIRST to avoid broad region overrides
     if (q.includes('sumul') || q.includes('gotalawadi') || q.includes('ved road')) {
       return { lat: '21.2268', lng: '72.8378' };
     }
@@ -106,17 +157,17 @@ const App = () => {
     if (q.includes('surat')) {
       return { lat: '21.1702', lng: '72.8311' };
     }
-    if (q.includes('ahmedabad') || q.includes('gujarat') || q.includes('guja')) {
-      return { lat: '23.0225', lng: '72.5714' };
-    }
-    if (q.includes('gandhinagar') || q.includes('gift city')) {
-      return { lat: '23.2156', lng: '72.6369' };
-    }
     if (q.includes('vadodara') || q.includes('baroda')) {
       return { lat: '22.3072', lng: '73.1812' };
     }
     if (q.includes('rajkot')) {
       return { lat: '22.3039', lng: '70.8022' };
+    }
+    if (q.includes('gandhinagar') || q.includes('gift city')) {
+      return { lat: '23.2156', lng: '72.6369' };
+    }
+    if (q.includes('ahmedabad')) {
+      return { lat: '23.0225', lng: '72.5714' };
     }
     if (q.includes('mumbai')) {
       return { lat: '19.0760', lng: '72.8777' };
@@ -132,6 +183,10 @@ const App = () => {
     }
     if (q.includes('hyderabad')) {
       return { lat: '17.3850', lng: '78.4867' };
+    }
+    // Broader regional state fallback LAST
+    if (q.includes('gujarat') || q.includes('guja')) {
+      return { lat: '23.0225', lng: '72.5714' };
     }
     if (q.includes('station a') || q.includes('mall')) {
       return { lat: '12.9736', lng: '77.5976' };
@@ -168,6 +223,13 @@ const App = () => {
 
   const fetchStations = async (overrides = {}) => {
     setRedirectionRec(null);
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    searchAbortControllerRef.current = controller;
+
+    setSearchStatus('loading');
     const mode = overrides.searchMode || searchMode;
     const latVal = overrides.userLat || userLat;
     const lngVal = overrides.userLng || userLng;
@@ -177,35 +239,64 @@ const App = () => {
     const eLngVal = overrides.endLng || endLng;
     const radVal = overrides.radius !== undefined ? overrides.radius : radius;
     const cityVal = overrides.cityName || locationName;
-
-    let stationList = [];
+    const connVal = overrides.connectorType !== undefined ? overrides.connectorType : connectorType;
+    const speedVal = overrides.speedMin !== undefined ? overrides.speedMin : speedMin;
+    const priceVal = overrides.priceMax !== undefined ? overrides.priceMax : priceMax;
+    const sortVal = overrides.sortBy !== undefined ? overrides.sortBy : sortBy;
 
     try {
-      let url = `${API_BASE_URL}/stations?`;
+      let url;
       if (mode === 'radius') {
-        url += `lat=${latVal}&lng=${lngVal}&radius=${radVal}&cityName=${encodeURIComponent(cityVal)}`;
+        url = `${API_BASE_URL}/stations?lat=${latVal}&lng=${lngVal}&radius=${radVal}&cityName=${encodeURIComponent(cityVal)}`;
       } else {
-        // Route-based search endpoint
         url = `${API_BASE_URL}/stations/route?startLat=${sLatVal}&startLng=${sLngVal}&endLat=${eLatVal}&endLng=${eLngVal}`;
       }
 
-      if (connectorType) url += `&connectorType=${connectorType}`;
-      if (speedMin) url += `&speedMin=${speedMin}`;
-      if (priceMax) url += `&priceMax=${priceMax}`;
-      url += `&sortBy=${sortBy}`;
+      if (connVal) url += `&connectorType=${encodeURIComponent(connVal)}`;
+      if (speedVal) url += `&speedMin=${encodeURIComponent(speedVal)}`;
+      if (priceVal) url += `&priceMax=${encodeURIComponent(priceVal)}`;
+      url += `&sortBy=${encodeURIComponent(sortVal)}`;
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (response.ok) {
         const data = await response.json();
-        stationList = Array.isArray(data) ? data : (data.stations || []);
+        const stationList = Array.isArray(data) ? data : (data.stations || []);
+        setStations(stationList);
+        setIsSampleMode(false);
+        setSearchStatus(stationList.length > 0 ? 'success' : 'no-results');
+
+        // Compute and track the #1 nearest station
+        if (stationList.length > 0) {
+          const withDist = [...stationList].filter((s) => typeof s.distance === 'number');
+          if (withDist.length > 0) {
+            withDist.sort((a, b) => a.distance - b.distance);
+            setNearestStation(withDist[0]);
+          } else {
+            setNearestStation(stationList[0]);
+          }
+        } else {
+          setNearestStation(null);
+        }
+      } else {
+        // If API returns non-200, fallback to resilient local station dataset
+        const fallbackList = getProcessedFallbackStations({
+          userLat: latVal,
+          userLng: lngVal,
+          radius: radVal,
+          connectorType,
+          speedMin,
+          priceMax,
+          sortBy
+        });
+        setStations(fallbackList);
+        setIsSampleMode(true);
+        setSearchStatus('sample-mode');
+        setNearestStation(fallbackList.length > 0 ? fallbackList[0] : null);
       }
     } catch (error) {
-      console.warn('API fetch unavailable, using resilient client-side dataset:', error);
-    }
-
-    // Resilient Fallback: if API returned 0 stations or failed (e.g. Vercel deployment), use rich local dataset
-    if (!stationList || stationList.length === 0) {
-      stationList = getProcessedFallbackStations({
+      if (error.name === 'AbortError') return;
+      console.warn('API fetch unavailable, using resilient fallback stations:', error);
+      const fallbackList = getProcessedFallbackStations({
         userLat: latVal,
         userLng: lngVal,
         radius: radVal,
@@ -214,21 +305,28 @@ const App = () => {
         priceMax,
         sortBy
       });
+      setStations(fallbackList);
+      setIsSampleMode(true);
+      setSearchStatus('sample-mode');
+      setNearestStation(fallbackList.length > 0 ? fallbackList[0] : null);
     }
+  };
 
-    setStations(stationList);
-
-    // Compute and track the #1 nearest station
-    if (stationList.length > 0) {
-      const withDist = [...stationList].filter(s => typeof s.distance === 'number');
-      if (withDist.length > 0) {
-        withDist.sort((a, b) => a.distance - b.distance);
-        setNearestStation(withDist[0]);
-      } else {
-        setNearestStation(stationList[0]);
-      }
-    } else {
-      setNearestStation(null);
+  const handleLoadSampleDirectory = () => {
+    setIsSampleMode(true);
+    setSearchStatus('sample-mode');
+    const sampleList = getProcessedFallbackStations({
+      userLat,
+      userLng,
+      radius,
+      connectorType,
+      speedMin,
+      priceMax,
+      sortBy
+    });
+    setStations(sampleList);
+    if (sampleList.length > 0) {
+      setNearestStation(sampleList[0]);
     }
   };
 
@@ -239,6 +337,38 @@ const App = () => {
       fetchMyBookings();
     }
   }, []);
+
+  // Periodic availability refresh every 30s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeTab === 'search' && !isSampleMode && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchStations();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [activeTab, isSampleMode, userLat, userLng, radius, locationName, searchMode]);
+
+  const handleGlobeSelectLocation = (lat, lng, name) => {
+    setShowGlobe(false);
+    try {
+      localStorage.setItem('voltsync_skip_globe', 'true');
+    } catch (e) {}
+    setUserLat(lat.toString());
+    setUserLng(lng.toString());
+    setLocationName(name || 'Selected Region');
+    fetchStations({
+      userLat: lat.toString(),
+      userLng: lng.toString(),
+      cityName: name || 'Selected Region'
+    });
+  };
+
+  const handleGlobeSkip = () => {
+    setShowGlobe(false);
+    try {
+      localStorage.setItem('voltsync_skip_globe', 'true');
+    } catch (e) {}
+  };
 
   const fetchMyBookings = async () => {
     try {
@@ -287,10 +417,9 @@ const App = () => {
     setRedirectionRec(null);
 
     // If the station is fully booked, trigger redirection check automatically
-    if (station.realTimeFreeCount === 0) {
-      // Find the nearest free station using simple client-side check among loaded stations
+    if (station && station.realTimeFreeCount === 0) {
       const alternatives = stations
-        .filter(s => s._id !== station._id && s.realTimeFreeCount > 0)
+        .filter((s) => s._id !== station._id && s.realTimeFreeCount > 0)
         .sort((a, b) => a.distance - b.distance);
 
       if (alternatives.length > 0) {
@@ -309,19 +438,47 @@ const App = () => {
   };
 
   const handleBookClick = (station) => {
+    // Require authentication before reserving
+    if (!user) {
+      setPendingBookingStation(station);
+      setIsAuthOpen(true);
+      return;
+    }
     setBookingStation(station);
     setIsBookingOpen(true);
   };
+
+
+  // Auto-refresh stations when filter selections change (Issue 21)
+  const isFilterMount = useRef(true);
+  useEffect(() => {
+    if (isFilterMount.current) {
+      isFilterMount.current = false;
+      return;
+    }
+    fetchStations({
+      connectorType,
+      speedMin,
+      priceMax,
+      sortBy
+    });
+  }, [connectorType, speedMin, priceMax, sortBy]);
 
   const handleResetFilters = () => {
     setConnectorType('');
     setSpeedMin('');
     setPriceMax('');
     setSortBy('distance');
-    fetchStations();
+    // Explicit parameter overrides to avoid React setState race condition (Issue 22)
+    fetchStations({
+      connectorType: '',
+      speedMin: '',
+      priceMax: '',
+      sortBy: 'distance'
+    });
   };
 
-  const handleBookingSuccess = (booking) => {
+  const handleBookingSuccess = (_booking) => {
     // Refresh stations to reflect immediately occupied charger slot if booked for current hour
     fetchStations();
     // Refresh booking history
@@ -452,7 +609,7 @@ const App = () => {
       {/* Header Panel */}
       <header className="app-header">
         <div className="logo-container">
-          <Zap className="logo-icon" size={26} fill="var(--accent-cyan)" />
+          <Zap className="logo-icon" size={26} fill="var(--accent-primary)" />
           <span className="logo-text gradient-text">VoltSync EV</span>
         </div>
 
@@ -463,6 +620,13 @@ const App = () => {
             className={`nav-btn ${activeTab === 'search' ? 'active' : ''}`}
           >
             <MapPin size={16} /> Find Charger
+          </button>
+          <button
+            onClick={() => setShowGlobe(true)}
+            className="nav-btn"
+            title="Launch 3D Globe Experience"
+          >
+            <Globe size={16} /> 3D Globe
           </button>
           <button
             onClick={() => setActiveTab('bookings')}
@@ -518,6 +682,17 @@ const App = () => {
         </div>
       </header>
 
+      {/* Live Surat Smart Grid Telemetry Pulse Bar */}
+      <div className="network-pulse-banner">
+        <div className="pulse-indicator-wrap">
+          <span className="pulse-ping-dot"></span>
+          <span className="pulse-text">Live Telemetry • Surat Smart Grid • 98.4% Uptime</span>
+        </div>
+        <div className="pulse-tag">
+          <span className="pulse-badge-green">{stations.length} Hubs Online</span>
+        </div>
+      </div>
+
       {/* Main Panel Content */}
       <div className="dashboard-body">
         {activeTab === 'search' && (
@@ -571,6 +746,9 @@ const App = () => {
               onRadiusChange={handleRadiusChange}
               onResetFilters={handleResetFilters}
               recommendation={redirectionRec}
+              searchStatus={searchStatus}
+              isSampleMode={isSampleMode}
+              onLoadSampleDirectory={handleLoadSampleDirectory}
             />
           </div>
         )}
@@ -592,7 +770,8 @@ const App = () => {
                 </div>
               ) : (
                 myBookings.map((b) => {
-                  const isConfirmed = ['locked', 'confirmed'].includes(b.status);
+                  const isConfirmed = ['confirmed', 'active'].includes(b.status);
+                  const canCancel = ['locked', 'payment_pending', 'confirmed'].includes(b.status);
                   return (
                     <div
                       key={b._id}
@@ -655,7 +834,7 @@ const App = () => {
                             Ref: {b.paymentIntentId}
                           </div>
                         )}
-                        {isConfirmed && (
+                        {canCancel && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -717,6 +896,16 @@ const App = () => {
           userEmail={userEmail}
           onClose={() => setViewingPassBooking(null)}
         />
+      )}
+
+      {/* 3D Global Earth Opening and Region Navigation */}
+      {showGlobe && (
+        <React.Suspense fallback={null}>
+          <GlobeIntro
+            onSelectLocation={handleGlobeSelectLocation}
+            onSkip={handleGlobeSkip}
+          />
+        </React.Suspense>
       )}
     </div>
   );

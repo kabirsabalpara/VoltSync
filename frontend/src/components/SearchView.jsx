@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, SlidersHorizontal, Compass, Layers, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
+import { Search, MapPin, Navigation, Zap, Filter, RefreshCw, X, Sparkles, SlidersHorizontal, Compass, Layers, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Flame, ShieldCheck } from 'lucide-react';
 
 const AUTOCOMPLETE_SUGGESTIONS = [
   { name: 'Surat, Gujarat', type: 'City', lat: '21.1702', lng: '72.8311' },
@@ -52,7 +52,10 @@ const SearchView = ({
   onSearchSubmit,
   onRadiusChange,
   onResetFilters,
-  recommendation
+  recommendation,
+  searchStatus = 'idle',
+  isSampleMode = false,
+  onLoadSampleDirectory
 }) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState([]);
@@ -249,10 +252,10 @@ const SearchView = ({
                 style={{
                   flex: 1.3,
                   background: isLiveLocationActive 
-                    ? 'linear-gradient(135deg, #f5a623, #d97706)' 
-                    : 'rgba(255,255,255,0.05)',
-                  border: isLiveLocationActive ? '1px solid #fff' : '1px solid var(--glass-border)',
-                  color: isLiveLocationActive ? '#0d1210' : 'var(--accent-primary)',
+                    ? 'linear-gradient(135deg, #10b981, #059669)' 
+                    : 'var(--bg-tertiary)',
+                  border: isLiveLocationActive ? '1px solid #10b981' : '1px solid var(--border-subtle)',
+                  color: isLiveLocationActive ? '#ffffff' : 'var(--accent-primary)',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   display: 'flex',
@@ -308,9 +311,9 @@ const SearchView = ({
                 onClick={() => setIsDrawerOpen(!isDrawerOpen)}
                 style={{
                   flex: 1,
-                  background: isDrawerOpen ? 'var(--accent-primary)' : 'rgba(255,255,255,0.08)',
-                  color: isDrawerOpen ? '#0d1210' : 'var(--text-primary)',
-                  border: 'none',
+                  background: isDrawerOpen ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                  color: isDrawerOpen ? '#ffffff' : 'var(--text-primary)',
+                  border: isDrawerOpen ? 'none' : '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   height: '32px',
                   padding: '0 8px',
@@ -354,8 +357,8 @@ const SearchView = ({
                       }
                     }}
                     style={{
-                      background: isSelected ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.05)',
-                      color: isSelected ? '#0d1210' : 'var(--text-secondary)',
+                      background: isSelected ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                      color: isSelected ? '#ffffff' : 'var(--text-secondary)',
                       border: isSelected ? 'none' : '1px solid var(--border-subtle)',
                       borderRadius: '12px',
                       padding: '2px 8px',
@@ -555,7 +558,19 @@ const SearchView = ({
       {/* FLOATING SIDE DRAWER FOR STATION LIST */}
       {isDrawerOpen && (
         <div className="floating-drawer">
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Mobile Bottom Sheet Drag Handle */}
+          <div
+            className="bottom-sheet-drag-handle"
+            style={{
+              width: '40px',
+              height: '4px',
+              background: 'var(--border-subtle)',
+              borderRadius: '2px',
+              margin: '8px auto 0 auto'
+            }}
+          />
+
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: 'var(--text-primary)' }}>
                 Charging Stations ({stations.length})
@@ -571,6 +586,24 @@ const SearchView = ({
               <X size={18} />
             </button>
           </div>
+
+          {/* Sample Mode Banner */}
+          {isSampleMode && (
+            <div style={{
+              background: '#fffbeb',
+              borderBottom: '1px solid #fef3c7',
+              color: '#92400e',
+              padding: '8px 16px',
+              fontSize: '11px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <ShieldCheck size={14} color="#d97706" />
+              <span>Offline Sample Directory — Preview only (Not active for live reservations)</span>
+            </div>
+          )}
 
           {/* Smart Redirection Alert Banner */}
           {recommendation && (
@@ -594,8 +627,50 @@ const SearchView = ({
             </div>
           )}
 
-          {/* Station List Cards */}
-          <div className="station-list" style={{ padding: '16px' }}>
+          {/* Station List Cards or Empty/Loading States */}
+          <div className="station-list" style={{ padding: '16px', overflowY: 'auto' }}>
+            {stations.length === 0 && (
+              <>
+                {searchStatus === 'loading' && (
+                  <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <RefreshCw className="spin-animation" size={24} style={{ margin: '0 auto 12px auto', color: 'var(--accent-primary)' }} />
+                    <div style={{ fontWeight: 600 }}>Scanning high-voltage EV grid nodes...</div>
+                  </div>
+                )}
+                {searchStatus === 'service-unavailable' && (
+                  <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--accent-red)', fontWeight: 700, fontSize: '14px', marginBottom: '6px' }}>
+                      Service Unavailable / Offline
+                    </div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                      Live backend connection could not be established. You can browse the verified offline sample directory.
+                    </p>
+                    {onLoadSampleDirectory && (
+                      <button
+                        type="button"
+                        onClick={onLoadSampleDirectory}
+                        className="action-btn"
+                        style={{ margin: '0 auto', fontSize: '12px', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Zap size={14} /> Explore Sample Directory (Offline)
+                      </button>
+                    )}
+                  </div>
+                )}
+                {searchStatus === 'no-results' && (
+                  <div style={{ padding: '40px 16px', textAlign: 'center' }}>
+                    <MapPin size={28} style={{ margin: '0 auto 10px auto', color: 'var(--text-muted)' }} />
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                      No Charging Stations Found
+                    </div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+                      No stations found within {radius} km of "{locationName}". Try selecting a larger radius or a different city hub.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
             {stations.map((station, idx) => {
               const isSelected = selectedStation && selectedStation._id === station._id;
               const hasFree = station.realTimeFreeCount > 0;
@@ -607,62 +682,96 @@ const SearchView = ({
                   key={station._id}
                   onClick={() => onSelectStation(station)}
                   className={`station-card ${isSelected ? 'selected' : ''} ${station.isHighDemand ? 'high-demand' : ''}`}
-                  style={{ padding: '14px', position: 'relative' }}
+                  style={{ padding: '16px', position: 'relative', borderRadius: '16px' }}
                 >
                   {isNearest && typeof station.distance === 'number' && (
                     <div style={{
-                      background: 'linear-gradient(135deg, rgba(245, 166, 35, 0.25), rgba(217, 119, 6, 0.25))',
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.2))',
                       border: '1px solid var(--accent-primary)',
-                      color: 'var(--accent-primary)',
+                      color: 'var(--primary)',
                       fontSize: '10px',
                       fontWeight: 800,
-                      padding: '2px 8px',
-                      borderRadius: '4px',
+                      padding: '3px 10px',
+                      borderRadius: '12px',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '4px',
-                      marginBottom: '8px'
+                      marginBottom: '10px'
                     }}>
                       <Zap size={11} fill="var(--accent-primary)" /> #1 NEAREST CHARGING NODE
                     </div>
                   )}
 
-                  <div className="card-header">
-                    <div>
-                      <div className="station-name" style={{ fontSize: '14px' }}>{station.name}</div>
-                      {typeof station.distance === 'number' && (
-                        <div className="distance-badge" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <MapPin size={11} /> {station.distance.toFixed(1)} km away {station.drivingMinutes ? `• ~${station.drivingMinutes} min drive` : ''}
-                        </div>
-                      )}
-                    </div>
-                    {station.isHighDemand && (
-                      <span className="demand-badge" style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <Flame size={12} /> High
-                      </span>
+                  {/* Top Header: Operator & Availability Badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{
+                      background: '#ecfdf5',
+                      color: 'var(--primary)',
+                      padding: '3px 8px',
+                      borderRadius: '12px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: '1px solid #a7f3d0'
+                    }}>
+                      <ShieldCheck size={12} /> {station.operator || 'VoltSync Hub'}
+                    </span>
+                    <span style={{
+                      background: hasFree ? '#ecfdf5' : '#fff1f2',
+                      color: hasFree ? 'var(--accent-green)' : 'var(--accent-red)',
+                      border: `1px solid ${hasFree ? '#a7f3d0' : '#fecdd3'}`,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <Zap size={10} fill="currentColor" />
+                      {hasFree ? `${station.realTimeFreeCount}/${station.totalChargers} Available` : 'Fully Booked'}
+                    </span>
+                  </div>
+
+                  {/* Station Name & Geographic Distance */}
+                  <div style={{ marginBottom: '10px' }}>
+                    <div className="station-name" style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>{station.name}</div>
+                    {typeof station.distance === 'number' && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                        <MapPin size={12} style={{ color: 'var(--accent-teal)' }} />
+                        <span>{station.distance.toFixed(1)} km away {station.drivingMinutes ? `• ~${station.drivingMinutes} min drive` : ''}</span>
+                      </div>
                     )}
                   </div>
 
-                  <div className="card-details" style={{ fontSize: '12px', margin: '8px 0' }}>
-                    <div className="detail-item">
-                      <Zap size={12} style={{ color: 'var(--accent-teal)' }} />
-                      <span style={{ fontWeight: '600' }}>{station.chargingSpeedKw} kW Fast</span>
+                  {/* ChargeConnect Specifications 2-Col Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ background: 'var(--bg-tertiary)', border: '1px solid #dce9ff', borderRadius: '10px', padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={14} style={{ color: 'var(--accent-primary)', shrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700' }}>Speed</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', whiteSpace: 'nowrap' }}>{station.chargingSpeedKw} kW Fast</div>
+                      </div>
                     </div>
-                    <div className="detail-item">
-                      {station.connectorTypes.map((c, i) => (
-                        <span key={i} className="connector-pill" style={{ fontSize: '10px' }}>
-                          {c}
-                        </span>
-                      ))}
+                    <div style={{ background: 'var(--bg-tertiary)', border: '1px solid #dce9ff', borderRadius: '10px', padding: '6px 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Compass size={14} style={{ color: 'var(--accent-teal)', shrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700' }}>Plugs</div>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {station.connectorTypes.join(', ')}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
                   {/* Progress Bar for Visual Availability */}
                   <div style={{ marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)' }}>
-                      <span>Availability</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                      <span>Live Capacity</span>
                       <span style={{ color: hasFree ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 'bold' }}>
-                        {station.realTimeFreeCount} / {station.totalChargers} Free
+                        {freePercent}% Ready
                       </span>
                     </div>
                     <div className="availability-bar-container" style={{ height: '5px' }}>
@@ -673,8 +782,12 @@ const SearchView = ({
                     </div>
                   </div>
 
-                  <div className="card-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                    <span className="price-value" style={{ fontSize: '13px' }}>₹{station.pricingPerKwh} / kWh</span>
+                  {/* Card Footer: Pricing & Action Buttons */}
+                  <div className="card-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '4px' }}>
+                    <div>
+                      <span style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-primary)' }}>₹{station.pricingPerKwh}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}> / kWh</span>
+                    </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         type="button"
@@ -684,11 +797,11 @@ const SearchView = ({
                           window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`, '_blank');
                         }}
                         style={{
-                          background: 'rgba(255, 255, 255, 0.05)',
+                          background: 'var(--bg-tertiary)',
                           color: 'var(--text-secondary)',
                           border: '1px solid var(--border-subtle)',
-                          padding: '5px 8px',
-                          borderRadius: '6px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
                           fontSize: '11px',
                           fontWeight: '600',
                           cursor: 'pointer',
@@ -698,25 +811,23 @@ const SearchView = ({
                         }}
                         title="Get directions on Google Maps"
                       >
-                        <Navigation size={11} /> Maps
+                        <Navigation size={12} /> Directions
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onBookClick(station);
                         }}
+                        className="action-btn"
                         style={{
-                          background: hasFree ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.15)',
-                          color: hasFree ? '#0d1210' : 'var(--accent-red)',
-                          border: hasFree ? 'none' : '1px solid rgba(239, 68, 68, 0.3)',
-                          padding: '5px 12px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer'
+                          height: '32px',
+                          padding: '0 14px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          width: 'auto'
                         }}
                       >
-                        {hasFree ? 'Reserve' : 'Queue'}
+                        <Zap size={13} /> {hasFree ? 'Book Slot' : 'Join Queue'}
                       </button>
                     </div>
                   </div>
@@ -726,6 +837,36 @@ const SearchView = ({
           </div>
         </div>
       )}
+
+      {/* Floating Mobile Map / List Toggle Button */}
+      <button
+        type="button"
+        onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+        className="mobile-fab-toggle"
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1400,
+          background: 'linear-gradient(135deg, #10b981, #059669)',
+          color: '#ffffff',
+          border: 'none',
+          borderRadius: '24px',
+          padding: '10px 20px',
+          boxShadow: '0 8px 24px rgba(16, 185, 129, 0.45)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '13px',
+          fontWeight: '700',
+          cursor: 'pointer'
+        }}
+        title="Toggle between Map View and Station List"
+      >
+        <Layers size={16} />
+        <span>{isDrawerOpen ? 'Show Map' : `View Stations (${stations.length})`}</span>
+      </button>
     </>
   );
 };

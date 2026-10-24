@@ -1,27 +1,52 @@
-# VoltSync EV — Obsidian Smart Charging Network
+# VoltSync EV / ChargeConnect — Smart EV Charging Network
 
-[![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-18-blue.svg)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-5.x-purple.svg)](https://vitejs.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-v18--v24-green.svg)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-19.2-blue.svg)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-8.1-purple.svg)](https://vitejs.dev/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20%2F%20Mongoose-emerald.svg)](https://www.mongodb.com/)
-[![License](https://img.shields.io/badge/License-MIT-amber.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-amber.svg)](LICENSE)
 
-VoltSync EV is a full-stack smart charging station discovery, real-time slot reservation, dynamic price calculation, and operator telemetry dashboard built with Node.js, Express, MongoDB, and React (Vite).
+VoltSync (ChargeConnect) is an enterprise-grade full-stack EV charging station discovery, corridor routing, real-time slot reservation, dynamic price calculation, and operator management system built with **React 19**, **Vite 8**, **Node.js**, **Express**, and **MongoDB/Mongoose**.
 
 ---
 
-## Key Features
+## Architecture & Key Features
 
-- **Interactive Map & Corridor Search:** Browse charging stations on Leaflet with live availability indicators, search by radius or route corridor, and filter by connector (CCS 2, CHAdeMO, Type 2), speed capacity (kW), and pricing.
-- **Smart EV Estimator:** Accurate battery state-of-charge (SoC) calculations tailored for top EV models (Tata Nexon EV Max, MG ZS EV, Hyundai Ioniq 5, BYD Atto 3, Mahindra XUV400).
-- **Atomic 5-Minute Slot Hold & Checkout:** Real-time slot locking with automated expiration timers, sandboxed UPI / Card / Wallet simulation, and instant digital pass generation.
-- **Digital FastPass Ticket Modal:** Scannable check-in QR code, unique alphanumeric reference code (`VS-XXX-XXXX`), speed ratings, turn-by-turn Google Maps navigation, and PDF print/save support.
-- **Operator Command Center:** Role-based access control (RBAC), gross network revenue analytics, utilization metrics, demand hotspots, new station onboarding, and live charger status controls (`free`, `occupied`, `maintenance`).
-- **Security & Integrity:**
-  - Salted bcrypt password hashing and tamper-proof JSON Web Tokens (JWT).
-  - Secure `/api/bookings/my-bookings` reading exclusively from authenticated JWT claims (zero IDOR).
-  - Public operator signup lockdown; administrative promotion CLI (`node backend/scripts/createOperator.js <email>`).
-  - Strict input sanitization and regex escape against NoSQL injection.
+- **Interactive Map & Route Corridor Search:**
+  - Real-time station discovery on Google Maps (with custom dark cyber styling) and seamless Leaflet fallback.
+  - Safe Google Maps InfoWindows built with native DOM nodes and `textContent` (zero unsanitized HTML string interpolation).
+  - True route corridor geometry calculation: stations within configurable corridor distance (5–10 km) of the route polyline.
+  - Interactive multi-criteria filtering: connector type (CCS 2, CHAdeMO, Type 2), minimum speed (kW), maximum pricing, and sorting. Immediate reactive updates with explicit state overrides to prevent React race conditions.
+  - Priority geocoding dictionary (checking Surat, Vadodara, Rajkot, Gandhinagar, and Ahmedabad before broad regional strings) plus OpenStreetMap Nominatim reverse geocoding.
+
+- **Authoritative Booking Lifecycle & Concurrency Protection:**
+  - Strict lifecycle states: `locked` -> `payment_pending` -> `confirmed` -> `active` -> `completed` (with `cancelled` and `expired`).
+  - 5-minute atomic booking locks with automated server-side cleanup.
+  - Compound unique MongoDB indexes on `(stationId, chargerId, slotTime, active)` preventing double booking under concurrent requests.
+  - Canonical slot normalization to exact slot boundaries (e.g., `10:00:00.000Z`).
+  - Charger ID validation: ensures the charger exists, belongs to the station, and is not in maintenance.
+  - Safe cancellation: cancelling a future booking does not prematurely mark physical chargers free if another current session is active.
+
+- **Cryptographic Payment & Real Checkout:**
+  - Official Razorpay payment gateway integration with mandatory HMAC SHA256 server-side signature verification:
+    $$\text{HMAC\_SHA256}(\text{order\_id} + "|" + \text{payment\_id}, \text{RAZORPAY\_KEY\_SECRET})$$
+  - Timing-safe signature comparison via `crypto.timingSafeEqual`.
+  - Client-side random payment IDs are rejected; no fallback confirmations after failed verification.
+  - Dedicated development mock payment mode (`PAYMENT_MODE=mock`), strictly disabled in production environments (`process.env.NODE_ENV === 'production'`).
+  - Real ISO/IEC 18004 compliant QR codes generated using `qrcode`, encoding secure check-in verification URLs (`/checkin/<token>`).
+
+- **Role-Based Access Control (RBAC) & Station Ownership:**
+  - Public registration (`POST /api/auth/signup`) is locked exclusively to `driver`. Privileged client-supplied fields like `role: "operator"` are discarded.
+  - Operator accounts can only be created via the controlled administrative CLI (`node scripts/createOperator.js <email>`) or seed scripts.
+  - Strict station ownership: `operatorId` is automatically assigned from `req.user.id`. Operators can only view, edit, delete, manage chargers, and access private analytics for stations they own.
+  - Date-range aware Operator Analytics (`today`, `7d`, `30d`) with capacity calculations based on active chargers and operating hours.
+
+- **Hardened Security & Production Infrastructure:**
+  - Salted `bcryptjs` password hashing exclusively; zero plaintext comparisons or fallbacks.
+  - Login strictly authenticates existing records; never creates accounts during login.
+  - Explicit CORS whitelist without wildcard matching; localhost origins permitted only in development.
+  - Robust server startup: awaits MongoDB connection before Express binds to `PORT`.
+  - GET search endpoints are strictly read-only and never write mock records to the database.
 
 ---
 
@@ -30,75 +55,134 @@ VoltSync EV is a full-stack smart charging station discovery, real-time slot res
 ```text
 VoltSync/
 ├── backend/
-│   ├── config/             # MongoDB connection, JWT, and database seeding
-│   ├── middleware/         # JWT verification and RBAC role authorization
-│   ├── models/             # Mongoose schemas (User, Station, Booking)
-│   ├── routes/             # REST endpoints (auth, stations, bookings)
-│   ├── scripts/            # CLI utilities (createOperator.js)
-│   ├── server.js           # Express app entrypoint & CORS setup
-│   └── package.json
+│   ├── config/             # Database connection (db.js), JWT config, seed data (seed.js)
+│   ├── middleware/         # auth.js (JWT authentication & requireRole RBAC)
+│   ├── models/             # Mongoose schemas: User.js, Station.js, Booking.js
+│   ├── routes/             # auth.js, stations.js, bookings.js, payments.js
+│   ├── scripts/            # createOperator.js, seedRunner.js, migrateStationOwners.js
+│   ├── tests/              # full_integration_test.js, lock_test.js
+│   ├── server.js           # Server startup (awaits DB connection), CORS whitelist, routes
+│   ├── verify_fixes.js     # 25-point automated security verification test suite
+│   ├── package.json
+│   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── components/     # MapView, SearchView, BookingFlow, FastPassModal, OperatorDashboard, AuthModal
-│   │   ├── config.js       # Centralized API base URL config
-│   │   ├── App.jsx         # Core application and booking history
-│   │   └── index.css       # Obsidian & Electric Amber modern design system
-│   ├── vercel.json         # Vercel SPA client rewrite configuration
-│   └── vite.config.js
-├── verify_fixes.js         # Automated 25-point security & functionality verification test suite
+│   │   ├── components/     # MapView, GoogleMapView, SearchView, BookingFlow,
+│   │   │                   # PaymentGatewayModal, QRCodeView, FastPassModal,
+│   │   │                   # OperatorDashboard, AuthModal, GlobeIntro
+│   │   ├── services/       # locationService.js, stationsData.js
+│   │   ├── config.js       # Centralized API base URL resolver (VITE_API_URL / VITE_API_BASE_URL)
+│   │   ├── App.jsx         # Main application orchestrator & reservations history
+│   │   └── index.css       # Obsidian & Electric Amber modern responsive UI
+│   ├── package.json
+│   ├── vite.config.js
+│   └── .env.example
+├── LICENSE                 # Official MIT License
 └── README.md
 ```
 
 ---
 
-## Local Development Setup
+## Environment Variables
 
-### Prerequisites
-- Node.js (v18 or higher)
-- MongoDB running locally on `mongodb://127.0.0.1:27017` or a MongoDB Atlas URI
+### Backend Configuration (`backend/.env`)
 
-### 1. Backend Setup
+```ini
+PORT=5000
+NODE_ENV=development
+
+# MongoDB Connection String
+MONGODB_URI=mongodb://127.0.0.1:27017/ev_charging
+
+# JWT Secret (minimum 32 characters in production)
+JWT_SECRET=voltsync_secure_random_production_jwt_secret_key_8492048204
+
+# Payment Mode: "mock" (for local/demo usage) or "razorpay" (production)
+PAYMENT_MODE=mock
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+
+# CORS Whitelist (comma-separated, no trailing slash)
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+```
+
+### Frontend Configuration (`frontend/.env`)
+
+```ini
+VITE_API_URL=http://localhost:5000
+VITE_API_BASE_URL=http://localhost:5000/api
+
+# Google Maps API Key (Optional: Leaflet fallback is automatically active if omitted)
+# Recommended: Restrict this key in Google Cloud Console using HTTP referrer restrictions.
+VITE_GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_KEY
+
+# Razorpay Key ID (Required only for real checkout in production)
+VITE_RAZORPAY_KEY_ID=
+```
+
+---
+
+## Getting Started
+
+### 1. Prerequisites
+- **Node.js**: v18.0.0 to v24.x
+- **MongoDB**: Community Server running locally on `localhost:27017` or a MongoDB Atlas URI
+
+### 2. Database Seeding & Development Accounts
+Populate the database with pre-configured stations and development test accounts:
 ```bash
 cd backend
-npm install
-cp .env.example .env    # Configure your MONGO_URI and JWT_SECRET
-node server.js
+npm run seed
 ```
-The backend server runs on `http://localhost:5000`.
 
-### 2. Frontend Setup
+**Seeded Development Accounts:**
+- **Driver:** `driver@example.com` / `DriverPass123!`
+- **Operator:** `operator@example.com` / `OperatorPass123!`
+
+### 3. Running the Backend Server
+```bash
+cd backend
+npm start
+```
+The backend initializes the database connection, cleans expired booking holds, and listens on `http://localhost:5000`.
+
+### 4. Running the Frontend Client
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-The Vite development server runs on `http://localhost:5173`.
-
-### 3. Verification Test Suite
-With the backend running, execute:
-```bash
-node verify_fixes.js
-```
-Runs 25 automated checks across authentication, authorization, lock expiry, IDOR protection, and rate security.
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## Live Cloud Deployment
+## Running Verification & Integration Tests
 
-### Backend (Render)
-1. Create a new **Web Service** on [Render.com](https://render.com/).
-2. Root Directory: `backend`
-3. Build Command: `npm install`
-4. Start Command: `node server.js`
-5. Environment Variables:
-   - `MONGO_URI`: `mongodb+srv://<user>:<password>@cluster0.xxxx.mongodb.net/voltsync?retryWrites=true&w=majority`
-   - `JWT_SECRET`: `<your-random-secure-secret>`
-   - `PORT`: `5000`
+With the backend running on `http://localhost:5000`:
 
-### Frontend (Vercel)
-1. Import repository on [Vercel.com](https://vercel.com/).
-2. Framework Preset: `Vite`
-3. Root Directory: `frontend`
-4. Environment Variables:
-   - `VITE_API_BASE_URL`: `https://your-backend.onrender.com/api`
-5. Deploy.
+1. **Security & Regression Verification Suite:**
+   ```bash
+   cd backend
+   node verify_fixes.js
+   ```
+   *Validates 25 critical security checkpoints: public signup driver lockdown, IDOR protection, role boundaries, station creation authorization, price manipulation prevention, and CORS policies.*
+
+2. **Full End-to-End Integration Suite:**
+   ```bash
+   cd backend
+   node tests/full_integration_test.js
+   ```
+   *Validates 25 workflow checkpoints: concurrent booking holds, past-time slot rejection, invalid charger detection, payment order breakdown, HMAC signature verification, QR check-in workflows, and scoped operator analytics.*
+
+3. **Frontend Production Build Check:**
+   ```bash
+   cd frontend
+   npm run build
+   ```
+   *Compiles the Vite production client bundle.*
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

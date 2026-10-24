@@ -4,6 +4,16 @@ import L from 'leaflet';
 import { Zap, MapPin, Navigation, ArrowUpRight, Compass, RefreshCw, Layers } from 'lucide-react';
 import GoogleMapView from './GoogleMapView';
 
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 // Custom Labeled HTML Badge for map pins
 const createLabeledMarker = (station, isSelected) => {
   const hasFree = station.realTimeFreeCount > 0;
@@ -26,7 +36,10 @@ const createLabeledMarker = (station, isSelected) => {
     badgeColor = '#f59e0b';
   }
 
-  const shortName = station.name.length > 22 ? station.name.substring(0, 20) + '...' : station.name;
+  const rawName = station.name || 'Station';
+  const shortName = rawName.length > 22 ? rawName.substring(0, 20) + '...' : rawName;
+  const safeName = escapeHtml(shortName);
+  const safeStatus = escapeHtml(statusText);
 
   return L.divIcon({
     html: `
@@ -34,11 +47,11 @@ const createLabeledMarker = (station, isSelected) => {
         display: flex;
         align-items: center;
         gap: 6px;
-        background: rgba(16, 17, 24, 0.96);
-        border: 2px solid ${isSelected ? '#a882ff' : borderColor};
+        background: rgba(255, 255, 255, 0.98);
+        border: 2px solid ${isSelected ? '#10b981' : borderColor};
         border-radius: 20px;
         padding: 5px 12px 5px 6px;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
         white-space: nowrap;
         transform: scale(${isSelected ? 1.1 : 1});
         transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -52,13 +65,13 @@ const createLabeledMarker = (station, isSelected) => {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #0d1210;
+          color: #ffffff;
         ">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
         </div>
         <div style="display: flex; flex-direction: column; align-items: flex-start;">
-          <span style="color: #ffffff; font-size: 11px; font-weight: 700; line-height: 1.2;">${shortName}</span>
-          <span style="color: ${badgeColor}; font-size: 10px; font-weight: 600; line-height: 1;">${station.chargingSpeedKw} kW • ${statusText}</span>
+          <span style="color: #0b1c30; font-size: 11px; font-weight: 700; line-height: 1.2;">${safeName}</span>
+          <span style="color: ${badgeColor}; font-size: 10px; font-weight: 600; line-height: 1;">${station.chargingSpeedKw} kW • ${safeStatus}</span>
         </div>
       </div>
     `,
@@ -213,7 +226,7 @@ const MapView = ({
           onClick={() => setEngine('google')}
           style={{
             background: 'var(--accent-primary)',
-            color: '#0d1210',
+            color: '#ffffff',
             border: 'none',
             borderRadius: '12px',
             padding: '3px 8px',
@@ -336,7 +349,7 @@ const MapView = ({
                       style={{
                         flex: 2,
                         background: 'var(--accent-primary)',
-                        color: '#0d1210',
+                        color: '#ffffff',
                         border: 'none',
                         padding: '8px',
                         borderRadius: '6px',
@@ -356,9 +369,9 @@ const MapView = ({
                       }}
                       style={{
                         flex: 1,
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        color: '#fff',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        background: 'var(--bg-tertiary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-subtle)',
                         padding: '8px',
                         borderRadius: '6px',
                         fontWeight: 'bold',
@@ -389,9 +402,9 @@ const MapView = ({
             bottom: '24px',
             right: '24px',
             zIndex: 1000,
-            background: isLiveLocationActive ? 'linear-gradient(135deg, #f5a623, #d97706)' : 'rgba(16, 17, 24, 0.92)',
-            border: isLiveLocationActive ? '2px solid #fff' : '1px solid rgba(245, 166, 35, 0.5)',
-            color: isLiveLocationActive ? '#0d1210' : 'var(--accent-primary)',
+            background: isLiveLocationActive ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255, 255, 255, 0.96)',
+            border: isLiveLocationActive ? '2px solid #10b981' : '1px solid var(--border-subtle)',
+            color: isLiveLocationActive ? '#ffffff' : 'var(--accent-primary)',
             borderRadius: '50px',
             padding: '10px 18px',
             fontSize: '12px',
@@ -400,7 +413,7 @@ const MapView = ({
             alignItems: 'center',
             gap: '8px',
             cursor: 'pointer',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.12)',
             transition: 'all 0.25s ease'
           }}
         >

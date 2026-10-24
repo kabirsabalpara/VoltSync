@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, QrCode, MapPin, CheckCircle, Zap, ShieldCheck, Printer } from 'lucide-react';
+import { X, MapPin, CheckCircle, Zap, ShieldCheck, Printer, Calendar, Clock, AlertCircle } from 'lucide-react';
+import QRCodeView from './QRCodeView';
 
 const FastPassModal = ({ booking, userEmail, onClose }) => {
   if (!booking) return null;
@@ -19,7 +20,9 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
     return `${dateStr} • ${startHour.toString().padStart(2, '0')}:00 - ${endHour.toString().padStart(2, '0')}:00`;
   };
 
-  const ticketRef = `VS-${stationName.substring(0, 3).toUpperCase()}-${booking._id.substring(booking._id.length - 4).toUpperCase()}`;
+  const bookingRef = booking.bookingReference || `VS-${booking._id ? booking._id.slice(-6).toUpperCase() : 'PASS'}`;
+  const checkInCode = booking.checkInCode || `VP-${booking._id ? booking._id.slice(-8).toUpperCase() : 'AUTH'}`;
+  const qrPayload = typeof window !== 'undefined' ? `${window.location.origin}/checkin/${checkInCode}` : `https://voltsync.app/checkin/${checkInCode}`;
 
   const handlePrint = () => {
     window.print();
@@ -44,28 +47,28 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
             Digital FastPass Ticket
           </h2>
           <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Present this verified QR pass at the charging pillar to initiate session.
+            Verified reservation credential for station check-in.
           </p>
         </div>
 
-        {/* Futuristic Digital Charging Pass Ticket */}
+        {/* Digital Charging Pass Ticket */}
         <div className="ticket-pass">
           <div className="ticket-header">
             <div>
-              <div style={{ fontSize: '16px', fontWeight: '800', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Zap size={18} style={{ color: 'var(--accent-primary)' }} /> VoltSync FastPass
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Official Verified EV Reservation</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Official Verified EV Reservation Pass</div>
             </div>
-            <div className="ticket-ref">{ticketRef}</div>
+            <div className="ticket-ref">{bookingRef}</div>
           </div>
 
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Details Grid */}
+          <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Details Column */}
             <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', color: 'var(--text-secondary)' }}>
               <div>
                 <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Charging Station</span>
-                <b style={{ color: '#fff', fontSize: '14px' }}>{stationName}</b>
+                <b style={{ color: 'var(--text-primary)', fontSize: '14px' }}>{stationName}</b>
               </div>
               
               <div style={{ display: 'flex', gap: '16px' }}>
@@ -75,7 +78,7 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
                 </div>
                 <div>
                   <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Speed Capacity</span>
-                  <b style={{ color: '#fff', fontSize: '14px' }}>{chargingSpeedKw} kW Fast DC</b>
+                  <b style={{ color: 'var(--text-primary)', fontSize: '14px' }}>{chargingSpeedKw} kW Fast DC</b>
                 </div>
               </div>
 
@@ -86,8 +89,8 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <div>
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Driver Email</span>
-                  <b style={{ color: '#fff' }}>{booking.userEmail || userEmail}</b>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Driver</span>
+                  <b style={{ color: 'var(--text-primary)' }}>{booking.userEmail || userEmail}</b>
                 </div>
                 <div>
                   <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase' }}>Amount Paid</span>
@@ -96,13 +99,21 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
               </div>
             </div>
 
-            {/* Scannable Check-in QR Pass */}
-            <div className="qr-placeholder" style={{ margin: '0 auto' }}>
-              <QrCode size={80} style={{ color: '#0a0f1d' }} />
-              <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#0a0f1d', marginTop: '4px', textAlign: 'center', lineHeight: 1.2 }}>
-                Show this pass at the charger
-              </span>
+            {/* Authentic SVG QR Code with Check-in Pass */}
+            <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 auto' }}>
+              <QRCodeView value={qrPayload} size={140} />
+              <div style={{ marginTop: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '4px 10px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--accent-primary)', letterSpacing: '1px' }}>
+                  {checkInCode}
+                </span>
+              </div>
             </div>
+          </div>
+
+          {/* Integration & Hardware Disclaimer */}
+          <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px dashed var(--border-subtle)', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ShieldCheck size={14} style={{ color: 'var(--accent-teal)', flexShrink: 0 }} />
+            <span>Present this pass to the on-site operator for verification. Digital pass confirms slot hold and does not physically activate high-voltage dispensing without physical cable hookup.</span>
           </div>
         </div>
 
@@ -117,7 +128,7 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
               className="nav-btn"
               style={{ flex: 1, border: '1px solid var(--border-subtle)', justifyContent: 'center', height: '40px', fontSize: '13px' }}
             >
-              <MapPin size={16} /> Open Maps Navigation
+              <MapPin size={16} /> Navigate
             </button>
           )}
 
@@ -127,7 +138,7 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
             className="nav-btn"
             style={{ flex: 1, border: '1px solid var(--border-subtle)', justifyContent: 'center', height: '40px', fontSize: '13px' }}
           >
-            <Printer size={16} /> Print / Save PDF
+            <Printer size={16} /> Print Pass
           </button>
 
           <button 

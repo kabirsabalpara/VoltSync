@@ -31,7 +31,13 @@ const StationSchema = new mongoose.Schema({
   chargingSpeedKw: { type: Number, required: true },
   pricingPerKwh: { type: Number, required: true },
   chargers: [ChargerSchema],
-  liveQueueLength: { type: Number, default: 0 }
+  liveQueueLength: { type: Number, default: 0 },
+  operatorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  }
 }, {
   timestamps: true
 });

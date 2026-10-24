@@ -9,14 +9,19 @@
     "lint": "oxlint",
     "preview": "vite preview"
   },
+  "engines": {
+    "node": ">=18.0.0 <25.0.0"
+  },
   "dependencies": {
     "docx": "^9.7.1",
     "file-saver": "^2.0.5",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.22.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

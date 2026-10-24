@@ -1,5 +1,7 @@
+const bcrypt = require('bcryptjs');
 const Station = require('../models/Station');
 const Booking = require('../models/Booking');
+const User = require('../models/User');
 
 const seedData = async () => {
   try {
@@ -8,6 +10,36 @@ const seedData = async () => {
     await Booking.deleteMany({});
 
     console.log('Cleared existing stations and bookings.');
+
+    // Ensure default demo users exist with securely hashed passwords
+    const salt = await bcrypt.genSalt(10);
+    const opHash = await bcrypt.hash('OperatorPass123!', salt);
+    const drHash = await bcrypt.hash('DriverPass123!', salt);
+
+    let defaultOperator = await User.findOne({ email: 'operator@example.com' });
+    if (!defaultOperator) {
+      defaultOperator = await User.create({
+        name: 'Sam Operator',
+        email: 'operator@example.com',
+        password: opHash,
+        evModel: 'Hyundai Ioniq 5',
+        role: 'operator'
+      });
+    } else if (defaultOperator.role !== 'operator') {
+      defaultOperator.role = 'operator';
+      await defaultOperator.save();
+    }
+
+    let defaultDriver = await User.findOne({ email: 'driver@example.com' });
+    if (!defaultDriver) {
+      defaultDriver = await User.create({
+        name: 'Alex Driver',
+        email: 'driver@example.com',
+        password: drHash,
+        evModel: 'Tata Nexon EV Max',
+        role: 'driver'
+      });
+    }
 
     const stations = [
       // ================= SURAT STATIONS =================
@@ -563,8 +595,12 @@ const seedData = async () => {
       }
     ];
 
-    const createdStations = await Station.create(stations);
-    console.log(`Seeded ${createdStations.length} stations successfully.`);
+    const stationsWithOwner = stations.map(s => ({
+      ...s,
+      operatorId: defaultOperator._id
+    }));
+    const createdStations = await Station.create(stationsWithOwner);
+    console.log(`Seeded ${createdStations.length} stations successfully under operator: ${defaultOperator.email}`);
 
     // Seed bookings for Station A
     const now = new Date();

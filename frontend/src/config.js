@@ -1,5 +1,27 @@
 // VoltSync API configuration
-// In development, defaults to local Node server on port 5000.
-// In production (Vercel), point VITE_API_BASE_URL to your Render backend URL (e.g. https://voltsync-api.onrender.com/api).
+// Automatically handles local dev, preview, Vercel edge rewrites, and Render production backend.
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/+$/, '');
+const resolveApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && envUrl.trim()) {
+    let cleaned = envUrl.trim().replace(/\/+$/, '');
+    // Ensure /api suffix is present even if environment variable contains only domain
+    if (!cleaned.endsWith('/api')) {
+      cleaned = `${cleaned}/api`;
+    }
+    return cleaned;
+  }
+
+  // In local development mode without explicit env var, connect to local Express server
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5000/api';
+  }
+
+  // In production / preview on Vercel:
+  // Direct to Render production backend /api by default
+  return 'https://voltsync.onrender.com/api';
+};
+
+export const API_BASE_URL = resolveApiBaseUrl();
+
+

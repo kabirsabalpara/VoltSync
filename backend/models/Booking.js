@@ -1,37 +1,75 @@
 const mongoose = require('mongoose');
 
 const BookingSchema = new mongoose.Schema({
+  bookingReference: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
   stationId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Station', 
-    required: true 
+    required: true,
+    index: true
   },
   chargerId: { 
     type: String, 
     required: true 
   },
+  connectorType: {
+    type: String,
+    default: 'CCS'
+  },
   slotTime: { 
     type: Date, 
     required: true 
   },
+  slotDurationMinutes: {
+    type: Number,
+    default: 60
+  },
   status: { 
     type: String, 
-    enum: ['locked', 'confirmed', 'cancelled', 'completed'], 
-    default: 'locked' 
+    enum: ['locked', 'payment_pending', 'confirmed', 'active', 'completed', 'cancelled', 'expired', 'refunded'], 
+    default: 'locked',
+    index: true
   },
   lockedUntil: { 
-    type: Date 
+    type: Date,
+    index: true
+  },
+  energyKwh: {
+    type: Number,
+    default: 15
+  },
+  unitPricePerKwh: {
+    type: Number,
+    default: 15
+  },
+  amountDue: {
+    type: Number,
+    default: 0
   },
   amountPaid: { 
     type: Number, 
     default: 0 
   },
-  paymentIntentId: { 
-    type: String 
+  amountInPaise: {
+    type: Number,
+    default: 0
+  },
+  currency: {
+    type: String,
+    default: 'INR'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'],
+    default: 'unpaid'
   },
   paymentGateway: {
     type: String,
-    enum: ['razorpay', 'sandbox', 'stripe', 'wallet'],
+    enum: ['razorpay', 'sandbox', 'mock', 'wallet'],
     default: 'sandbox'
   },
   paymentMethod: {
@@ -40,7 +78,11 @@ const BookingSchema = new mongoose.Schema({
     default: 'upi'
   },
   paymentOrderId: {
-    type: String
+    type: String,
+    index: true
+  },
+  paymentIntentId: { 
+    type: String 
   },
   paymentSignature: {
     type: String
@@ -51,25 +93,37 @@ const BookingSchema = new mongoose.Schema({
   taxBreakdown: {
     baseAmount: { type: Number, default: 0 },
     gstAmount: { type: Number, default: 0 },
-    cessAmount: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 }
+  },
+  // Opaque verifiable check-in pass
+  checkInCode: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  checkInStatus: {
+    type: String,
+    enum: ['pending', 'checked_in', 'expired'],
+    default: 'pending'
+  },
+  checkedInAt: {
+    type: Date
   },
   userEmail: { 
     type: String, 
-    required: true 
+    required: true,
+    index: true
   },
   active: { 
     type: Boolean, 
-    default: true 
+    default: true,
+    index: true
   }
 }, {
   timestamps: true
 });
 
-// Create a compound unique index to prevent double bookings.
-// Only one active booking (status 'confirmed' or non-expired 'locked') is allowed per slot per charger.
-// To handle this, we enforce uniqueness on (stationId, chargerId, slotTime, active).
-// When a booking is cancelled or its lock expires, we set 'active' to false or remove it.
+// Compound unique index ensuring only one active booking per station, charger, and canonical slot time
 BookingSchema.index({ stationId: 1, chargerId: 1, slotTime: 1, active: 1 }, { 
   unique: true, 
   partialFilterExpression: { active: true } 

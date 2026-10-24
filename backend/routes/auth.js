@@ -6,34 +6,64 @@ const User = require('../models/User');
 
 const { JWT_SECRET } = require('../config/jwt');
 const authMiddleware = require('../middleware/auth');
+const { loginRateLimiter } = require('../middleware/rateLimiter');
 
-// 1. POST /api/auth/signup - Register new user
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const isValidPassword = (password) => {
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    return false;
+  }
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  return hasUpper && hasLower && hasNumber && hasSpecial;
+};
+
+// 1. POST /api/auth/signup - Register new driver (Public signup forces driver role)
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, password, phone, evModel, role } = req.body;
+    const { name, email, password, phone, evModel } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const cleanName = String(name).trim();
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    if (!cleanName) {
+      return res.status(400).json({ error: 'Valid name is required.' });
+    }
+
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address.' });
+    }
+
+    if (!isValidPassword(password)) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character.'
+      });
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
-    // Hash password with bcrypt
+    // Hash password with bcrypt salt
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const assignedRole = role === 'operator' ? 'operator' : 'driver';
-
+    // Public signup is strictly locked to driver role
     const user = new User({
-      name,
-      email: email.toLowerCase(),
+      name: cleanName,
+      email: normalizedEmail,
       password: hashedPassword,
-      phone: phone || '',
-      evModel: evModel || 'Tata Nexon EV Max',
-      role: assignedRole
+      phone: phone ? String(phone).trim() : '',
+      evModel: evModel ? String(evModel).trim() : 'Tata Nexon EV Max',
+      role: 'driver'
     });
 
     await user.save();
@@ -46,6 +76,7 @@ router.post('/signup', async (req, res) => {
     );
 
     res.status(201).json({
+      success: true,
       message: 'Account created successfully!',
       token,
       user: {
@@ -58,12 +89,12 @@ router.post('/signup', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 2. POST /api/auth/login - Authenticate user
-router.post('/login', async (req, res) => {
+// 2. POST /api/auth/login - Authenticate user with rate limiting and secure password hash verification
+router.post('/login', loginRateLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -71,38 +102,16 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    let user = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
 
-    // Allow instant demo logins for testing
     if (!user) {
-      const salt = await bcrypt.genSalt(10);
-      if (email.toLowerCase() === 'driver@example.com') {
-        const hashedPassword = await bcrypt.hash(password || 'driver123', salt);
-        user = await User.create({
-          name: 'Alex Driver',
-          email: 'driver@example.com',
-          password: hashedPassword,
-          evModel: 'Tata Nexon EV Max',
-          role: 'driver'
-        });
-      } else if (email.toLowerCase() === 'operator@example.com') {
-        const hashedPassword = await bcrypt.hash(password || 'operator123', salt);
-        user = await User.create({
-          name: 'Sam Operator',
-          email: 'operator@example.com',
-          password: hashedPassword,
-          evModel: 'Hyundai Ioniq 5',
-          role: 'operator'
-        });
-      } else {
-        return res.status(401).json({ error: 'Invalid email or password.' });
-      }
-    } else {
-      const isMatch = await bcrypt.compare(password, user.password);
-      const isLegacyMatch = !isMatch && user.password === password;
-      if (!isMatch && !isLegacyMatch) {
-        return res.status(401).json({ error: 'Invalid password.' });
-      }
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const isMatch = await bcrypt.compare(String(password), user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     // Generate standard JWT signed with secret
@@ -113,6 +122,7 @@ router.post('/login', async (req, res) => {
     );
 
     res.json({
+      success: true,
       message: 'Login successful!',
       token,
       user: {
@@ -125,16 +135,24 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// 3. GET /api/auth/me - Fetch current user
+// 3. GET /api/auth/me - Fetch currently authenticated user session
 router.get('/me', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.user.email });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!req.user || !req.user.email) {
+      return res.status(401).json({ success: false, error: 'Invalid authentication session.' });
+    }
+
+    const user = await User.findOne({ email: req.user.email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
     res.json({
+      success: true,
       user: {
         id: user._id,
         name: user.name,
@@ -145,8 +163,9 @@ router.get('/me', authMiddleware, async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 module.exports = router;
+

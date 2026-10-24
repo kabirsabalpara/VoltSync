@@ -133,11 +133,17 @@ const GoogleMapView = ({
   const [mapType, setMapType] = useState('dark'); // dark | satellite
   const [showTraffic, setShowTraffic] = useState(false);
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCag8TfW0XqGwROZOuG6WYjLFhMlRM9sFc';
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
   // 1. Initialize Google Maps
   useEffect(() => {
     let isMounted = true;
+
+    if (!apiKey) {
+      setMapError(true);
+      if (onSwitchToLeaflet) onSwitchToLeaflet();
+      return;
+    }
 
     loadGoogleMapsScript(apiKey)
       .then((googleMaps) => {
@@ -257,46 +263,65 @@ const GoogleMapView = ({
           badgeColor = '#f59e0b';
         }
 
-        const shortName = this.station.name.length > 20 ? this.station.name.substring(0, 18) + '...' : this.station.name;
+        const shortName = this.station.name && this.station.name.length > 20 
+          ? this.station.name.substring(0, 18) + '...' 
+          : (this.station.name || 'EV Station');
 
-        this.div.innerHTML = `
-          <div style="
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(16, 17, 24, 0.95);
-            border: 2px solid ${this.isSelected ? '#f5a623' : borderColor};
-            border-radius: 20px;
-            padding: 5px 12px 5px 6px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-            white-space: nowrap;
-            transform: scale(${this.isSelected ? 1.12 : 1});
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            user-select: none;
-          ">
-            <div style="
-              width: 22px;
-              height: 22px;
-              border-radius: 50%;
-              background: ${bgGradient};
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: #0d1210;
-              flex-shrink: 0;
-            ">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-            </div>
-            <div style="display: flex; flex-direction: column; align-items: flex-start;">
-              <span style="color: #ffffff; font-size: 11px; font-weight: 700; line-height: 1.2;">${shortName}</span>
-              <span style="color: ${badgeColor}; font-size: 10px; font-weight: 600; line-height: 1;">${this.station.chargingSpeedKw} kW • ${statusText}</span>
-            </div>
-          </div>
-        `;
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '6px';
+        wrapper.style.background = 'rgba(255, 255, 255, 0.98)';
+        wrapper.style.border = `2px solid ${this.isSelected ? '#10b981' : borderColor}`;
+        wrapper.style.borderRadius = '20px';
+        wrapper.style.padding = '5px 12px 5px 6px';
+        wrapper.style.boxShadow = '0 4px 14px rgba(15, 23, 42, 0.15)';
+        wrapper.style.whiteSpace = 'nowrap';
+        wrapper.style.transform = `scale(${this.isSelected ? 1.12 : 1})`;
+        wrapper.style.transition = 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+        wrapper.style.userSelect = 'none';
+
+        const iconDiv = document.createElement('div');
+        iconDiv.style.width = '22px';
+        iconDiv.style.height = '22px';
+        iconDiv.style.borderRadius = '50%';
+        iconDiv.style.background = bgGradient;
+        iconDiv.style.display = 'flex';
+        iconDiv.style.alignItems = 'center';
+        iconDiv.style.justifyContent = 'center';
+        iconDiv.style.color = '#ffffff';
+        iconDiv.style.flexShrink = '0';
+        iconDiv.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>';
+
+        const textCol = document.createElement('div');
+        textCol.style.display = 'flex';
+        textCol.style.flexDirection = 'column';
+        textCol.style.alignItems = 'flex-start';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.style.color = '#0b1c30';
+        nameSpan.style.fontSize = '11px';
+        nameSpan.style.fontWeight = '700';
+        nameSpan.style.lineHeight = '1.2';
+        nameSpan.textContent = shortName;
+
+        const subSpan = document.createElement('span');
+        subSpan.style.color = badgeColor;
+        subSpan.style.fontSize = '10px';
+        subSpan.style.fontWeight = '600';
+        subSpan.style.lineHeight = '1';
+        subSpan.textContent = `${this.station.chargingSpeedKw} kW • ${statusText}`;
+
+        textCol.appendChild(nameSpan);
+        textCol.appendChild(subSpan);
+        wrapper.appendChild(iconDiv);
+        wrapper.appendChild(textCol);
+        this.div.appendChild(wrapper);
 
         this.div.addEventListener('click', (e) => {
           e.stopPropagation();
           onSelectStation(this.station);
+          showStationInfoWindow(this.station, this.pos);
         });
 
         const panes = this.getPanes();
@@ -323,42 +348,102 @@ const GoogleMapView = ({
 
     const showStationInfoWindow = (station, latLng) => {
       const infoWindow = infoWindowRef.current;
+      if (!infoWindow) return;
+
       const hasFree = station.realTimeFreeCount > 0;
       const lat = station.location.coordinates[1];
       const lng = station.location.coordinates[0];
 
-      const contentString = `
-        <div style="color: #0f172a; padding: 6px; min-width: 220px; font-family: inherit;">
-          <h4 style="margin: 0 0 6px 0; font-size: 14px; font-weight: 800; color: #0f172a;">${station.name}</h4>
-          <div style="font-size: 12px; color: #475569; margin-bottom: 8px; display: flex; flex-direction: column; gap: 3px;">
-            <div>Charging Speed: <b>${station.chargingSpeedKw} kW Fast DC</b></div>
-            <div>Price Rate: <b style="color: #059669;">₹${station.pricingPerKwh} / kWh</b></div>
-            <div>Connectors: <b>${station.connectorTypes.join(', ')}</b></div>
-            ${typeof station.distance === 'number' ? `<div>Distance: <b style="color: #d97706;">${station.distance.toFixed(1)} km</b></div>` : ''}
-            <div>Availability: <b style="color: ${hasFree ? '#059669' : '#e11d48'};">${station.realTimeFreeCount} of ${station.totalChargers} Free</b></div>
-          </div>
-          <div style="display: flex; gap: 6px; margin-top: 8px;">
-            <button id="iw-reserve-btn" style="flex: 2; background: #f5a623; color: #000; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;">
-              Reserve Slot
-            </button>
-            <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving" target="_blank" rel="noopener noreferrer" style="flex: 1; text-align: center; text-decoration: none; background: #e2e8f0; color: #0f172a; padding: 6px 8px; border-radius: 6px; font-size: 11px; font-weight: bold;">
-              Navigate
-            </a>
-          </div>
-        </div>
-      `;
+      // Build safe DOM tree using textContent to prevent XSS
+      const container = document.createElement('div');
+      container.style.color = '#0f172a';
+      container.style.padding = '6px';
+      container.style.minWidth = '220px';
+      container.style.fontFamily = 'inherit';
 
-      infoWindow.setContent(contentString);
+      const title = document.createElement('h4');
+      title.style.margin = '0 0 6px 0';
+      title.style.fontSize = '14px';
+      title.style.fontWeight = '800';
+      title.style.color = '#0f172a';
+      title.textContent = station.name || 'EV Station';
+
+      const details = document.createElement('div');
+      details.style.fontSize = '12px';
+      details.style.color = '#475569';
+      details.style.marginBottom = '8px';
+      details.style.display = 'flex';
+      details.style.flexDirection = 'column';
+      details.style.gap = '3px';
+
+      const speedRow = document.createElement('div');
+      speedRow.textContent = `Charging Speed: ${station.chargingSpeedKw} kW Fast DC`;
+
+      const priceRow = document.createElement('div');
+      priceRow.textContent = `Price Rate: ₹${station.pricingPerKwh} / kWh`;
+
+      const connRow = document.createElement('div');
+      connRow.textContent = `Connectors: ${(station.connectorTypes || []).join(', ')}`;
+
+      details.appendChild(speedRow);
+      details.appendChild(priceRow);
+      details.appendChild(connRow);
+
+      if (typeof station.distance === 'number') {
+        const distRow = document.createElement('div');
+        distRow.textContent = `Distance: ${station.distance.toFixed(1)} km`;
+        details.appendChild(distRow);
+      }
+
+      const availRow = document.createElement('div');
+      availRow.style.color = hasFree ? '#059669' : '#e11d48';
+      availRow.style.fontWeight = 'bold';
+      availRow.textContent = `Availability: ${station.realTimeFreeCount} of ${station.totalChargers} Free`;
+      details.appendChild(availRow);
+
+      const btnRow = document.createElement('div');
+      btnRow.style.display = 'flex';
+      btnRow.style.gap = '6px';
+      btnRow.style.marginTop = '8px';
+
+      const reserveBtn = document.createElement('button');
+      reserveBtn.style.flex = '2';
+      reserveBtn.style.background = '#f5a623';
+      reserveBtn.style.color = '#000';
+      reserveBtn.style.border = 'none';
+      reserveBtn.style.padding = '6px 10px';
+      reserveBtn.style.borderRadius = '6px';
+      reserveBtn.style.fontSize = '11px';
+      reserveBtn.style.fontWeight = 'bold';
+      reserveBtn.style.cursor = 'pointer';
+      reserveBtn.textContent = 'Reserve Slot';
+      reserveBtn.onclick = () => onBookClick(station);
+
+      const navLink = document.createElement('a');
+      navLink.style.flex = '1';
+      navLink.style.textAlign = 'center';
+      navLink.style.textDecoration = 'none';
+      navLink.style.background = '#e2e8f0';
+      navLink.style.color = '#0f172a';
+      navLink.style.padding = '6px 8px';
+      navLink.style.borderRadius = '6px';
+      navLink.style.fontSize = '11px';
+      navLink.style.fontWeight = 'bold';
+      navLink.textContent = 'Navigate';
+      navLink.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+      navLink.target = '_blank';
+      navLink.rel = 'noopener noreferrer';
+
+      btnRow.appendChild(reserveBtn);
+      btnRow.appendChild(navLink);
+
+      container.appendChild(title);
+      container.appendChild(details);
+      container.appendChild(btnRow);
+
+      infoWindow.setContent(container);
       infoWindow.setPosition(latLng);
       infoWindow.open(map);
-
-      // Add listener to custom button inside InfoWindow
-      setTimeout(() => {
-        const btn = document.getElementById('iw-reserve-btn');
-        if (btn) {
-          btn.onclick = () => onBookClick(station);
-        }
-      }, 50);
     };
 
     stations.forEach((station) => {
@@ -520,7 +605,7 @@ const GoogleMapView = ({
             onClick={() => setMapType('dark')}
             style={{
               background: mapType === 'dark' ? 'var(--accent-primary)' : 'transparent',
-              color: mapType === 'dark' ? '#0d1210' : 'var(--text-secondary)',
+              color: mapType === 'dark' ? '#ffffff' : 'var(--text-secondary)',
               border: 'none',
               borderRadius: '6px',
               padding: '5px 10px',
@@ -532,14 +617,14 @@ const GoogleMapView = ({
               gap: '4px'
             }}
           >
-            <Layers size={12} /> Cyber Dark
+            <Layers size={12} /> Standard View
           </button>
           <button
             type="button"
             onClick={() => setMapType('satellite')}
             style={{
               background: mapType === 'satellite' ? 'var(--accent-primary)' : 'transparent',
-              color: mapType === 'satellite' ? '#0d1210' : 'var(--text-secondary)',
+              color: mapType === 'satellite' ? '#ffffff' : 'var(--text-secondary)',
               border: 'none',
               borderRadius: '6px',
               padding: '5px 10px',
@@ -593,9 +678,9 @@ const GoogleMapView = ({
             bottom: '24px',
             right: '24px',
             zIndex: 50,
-            background: isLiveLocationActive ? 'linear-gradient(135deg, #f5a623, #d97706)' : 'rgba(16, 17, 24, 0.92)',
-            border: isLiveLocationActive ? '2px solid #fff' : '1px solid rgba(245, 166, 35, 0.5)',
-            color: isLiveLocationActive ? '#0d1210' : 'var(--accent-primary)',
+            background: isLiveLocationActive ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255, 255, 255, 0.96)',
+            border: isLiveLocationActive ? '2px solid #10b981' : '1px solid var(--border-subtle)',
+            color: isLiveLocationActive ? '#ffffff' : 'var(--accent-primary)',
             borderRadius: '50px',
             padding: '10px 18px',
             fontSize: '12px',

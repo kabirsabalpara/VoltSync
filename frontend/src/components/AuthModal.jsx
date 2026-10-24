@@ -68,10 +68,10 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
   const handleQuickDemoLogin = (demoRole) => {
     if (demoRole === 'driver') {
       setEmail('driver@example.com');
-      setPassword('driver123');
+      setPassword('DriverPass123!');
     } else {
       setEmail('operator@example.com');
-      setPassword('operator123');
+      setPassword('OperatorPass123!');
     }
   };
 
@@ -106,7 +106,7 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
               borderRadius: '8px',
               border: 'none',
               background: mode === 'login' ? 'var(--accent-primary)' : 'transparent',
-              color: mode === 'login' ? '#0d1210' : 'var(--text-secondary)',
+              color: mode === 'login' ? '#ffffff' : 'var(--text-secondary)',
               fontWeight: '700',
               fontSize: '13px',
               cursor: 'pointer',
@@ -124,7 +124,7 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
               borderRadius: '8px',
               border: 'none',
               background: mode === 'signup' ? 'var(--accent-primary)' : 'transparent',
-              color: mode === 'signup' ? '#0d1210' : 'var(--text-secondary)',
+              color: mode === 'signup' ? '#ffffff' : 'var(--text-secondary)',
               fontWeight: '700',
               fontSize: '13px',
               cursor: 'pointer',
