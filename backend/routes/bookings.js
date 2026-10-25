@@ -223,10 +223,29 @@ router.post('/lock', authMiddleware, async (req, res) => {
         existingUserBooking.paymentStatus = 'failed';
         await existingUserBooking.save();
       } else {
-        return res.status(409).json({
+        const responseData = {
           success: false,
           error: 'You already have a reservation during this time slot.'
-        });
+        };
+        // Fix 2: Distinguish the user's own existing hold (unexpired locked or payment_pending)
+        if (['locked', 'payment_pending'].includes(existingUserBooking.status) && existingUserBooking.lockedUntil > now) {
+          responseData.existingHold = {
+            bookingId: existingUserBooking._id,
+            bookingReference: existingUserBooking.bookingReference,
+            stationId: existingUserBooking.stationId,
+            chargerId: existingUserBooking.chargerId,
+            slotTime: existingUserBooking.slotTime,
+            status: existingUserBooking.status,
+            lockedUntil: existingUserBooking.lockedUntil,
+            energyKwh: existingUserBooking.energyKwh,
+            pricing: {
+              totalAmount: existingUserBooking.amountDue || existingUserBooking.taxBreakdown?.totalAmount || 0,
+              baseAmount: existingUserBooking.taxBreakdown?.baseAmount || 0,
+              gstAmount: existingUserBooking.taxBreakdown?.gstAmount || 0
+            }
+          };
+        }
+        return res.status(409).json(responseData);
       }
     }
 

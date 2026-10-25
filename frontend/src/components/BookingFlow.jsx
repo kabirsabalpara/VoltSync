@@ -45,6 +45,8 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
   const [selectedChargerId, setSelectedChargerId] = useState(null);
   const [lockedUntil, setLockedUntil] = useState(null);
   const [confirmedBookingData, setConfirmedBookingData] = useState(null);
+  const [existingHold, setExistingHold] = useState(null);
+  const [releasingHold, setReleasingHold] = useState(false);
 
   // EV Vehicle & Battery Estimator
   const [selectedEv, setSelectedEv] = useState(EV_MODELS[0]);
@@ -73,16 +75,18 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
     }));
   }, [selectedSlot, station]);
 
-  // Sync selected charger with an available one for current slot
+  // Sync selected charger with an available one for current slot (or keep user's held charger)
   useEffect(() => {
     if (currentSlotChargers && currentSlotChargers.length > 0) {
-      const isCurrentValid = selectedChargerId && currentSlotChargers.some(c => c.id === selectedChargerId && c.status === 'AVAILABLE');
+      const isCurrentValid = selectedChargerId && currentSlotChargers.some(c => 
+        c.id === selectedChargerId && (c.status === 'AVAILABLE' || (existingHold && existingHold.chargerId === selectedChargerId))
+      );
       if (!isCurrentValid) {
         const firstAvailable = currentSlotChargers.find(c => c.status === 'AVAILABLE');
         setSelectedChargerId(firstAvailable ? firstAvailable.id : null);
       }
     }
-  }, [currentSlotChargers, selectedChargerId]);
+  }, [currentSlotChargers, selectedChargerId, existingHold]);
 
   // Fetch live slot availability on open (background sync)
   useEffect(() => {
@@ -171,7 +175,7 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
 
     const token = localStorage.getItem('voltsync_token');
     if (!token) {
-      setError('Please sign in or register (top right) before reserving a charger slot.');
+      setError('Your login session has expired. Please sign in again.');
       setLoading(false);
       return;
     }
@@ -192,9 +196,11 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.status === 201) {
+        setExistingHold(null);
+        setError(null);
         setBookingId(data.bookingId);
         setChargerId(data.chargerId);
         setLockedUntil(data.lockedUntil);
@@ -204,19 +210,85 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
         setTimeLeft(serverSeconds);
         setTimerExpired(false);
         setStep('payment');
+      } else if (response.status === 401) {
+        setExistingHold(null);
+        setError('Your login session has expired. Please sign in again.');
       } else if (response.status === 409) {
-        setError(data.error || 'This charger has just been reserved. Please select another charger.');
-        fetchSlots(); // Instantly update cinema seat statuses
-        if (data.alternative) {
-          setRedirectionRec(data.alternative);
+        fetchSlots(); // Refresh live availability
+        if (data.existingHold) {
+          setExistingHold(data.existingHold);
+          setError(null); // The hold action banner will explain clearly
+        } else {
+          setExistingHold(null);
+          if (data.error && data.error.includes('already have a reservation')) {
+            setError('You already have a confirmed reservation during this time slot.');
+          } else {
+            setError(data.error || 'This charger has just been reserved. Please select another charger.');
+          }
+          if (data.alternative) {
+            setRedirectionRec(data.alternative);
+          }
         }
+      } else if (response.status === 400) {
+        setExistingHold(null);
+        setError(data.error || 'Invalid booking request. Please check your selections.');
       } else {
-        setError(data.error || 'Failed to reserve slot. Please try another slot or station.');
+        setExistingHold(null);
+        setError(data.error || 'Unable to reserve this charger right now. Please try again.');
       }
     } catch (err) {
-      setError(err.message || 'Payment service unavailable or network error. Please select another slot.');
+      setExistingHold(null);
+      setError('Unable to reserve this charger right now. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Continue checkout using existing server hold
+  const handleContinueExistingHold = () => {
+    if (!existingHold) return;
+    const remainingSeconds = Math.max(0, Math.floor((new Date(existingHold.lockedUntil).getTime() - Date.now()) / 1000));
+    if (remainingSeconds <= 0) {
+      setError('Your reservation hold has expired. Please select a charger to reserve again.');
+      setExistingHold(null);
+      fetchSlots();
+      return;
+    }
+    setBookingId(existingHold.bookingId);
+    setChargerId(existingHold.chargerId);
+    setSelectedChargerId(existingHold.chargerId);
+    setLockedUntil(existingHold.lockedUntil);
+    setTimeLeft(remainingSeconds);
+    setTimerExpired(false);
+    setStep('payment');
+  };
+
+  // Release existing hold so user can select another charger
+  const handleReleaseExistingHold = async () => {
+    if (!existingHold?.bookingId) return;
+    setReleasingHold(true);
+    const token = localStorage.getItem('voltsync_token');
+    try {
+      const res = await fetch(`${API_BASE_URL}/bookings/release`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ bookingId: existingHold.bookingId })
+      });
+      if (res.ok) {
+        setExistingHold(null);
+        setError(null);
+        await fetchSlots();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to release existing hold. Please try again.');
+      }
+    } catch (err) {
+      setError('Unable to release existing hold right now. Please try again.');
+    } finally {
+      setReleasingHold(false);
     }
   };
 
@@ -420,7 +492,8 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px' }}>
                     {currentSlotChargers.map((charger) => {
-                      const isAvail = charger.status === 'AVAILABLE';
+                      const isOwnHold = existingHold && existingHold.chargerId === charger.id;
+                      const isAvail = charger.status === 'AVAILABLE' || isOwnHold;
                       const isSelected = selectedChargerId === charger.id;
                       const isHeld = charger.status === 'HELD';
                       const isBooked = charger.status === 'BOOKED';
@@ -430,7 +503,11 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
                       let badgeColor = '#059669';
                       let badgeBg = 'rgba(16, 185, 129, 0.12)';
 
-                      if (isHeld) {
+                      if (isOwnHold) {
+                        badgeText = 'Your Hold';
+                        badgeColor = '#10b981';
+                        badgeBg = 'rgba(16, 185, 129, 0.2)';
+                      } else if (isHeld) {
                         badgeText = 'Held';
                         badgeColor = '#d97706';
                         badgeBg = 'rgba(245, 158, 11, 0.12)';
@@ -458,7 +535,7 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
                             justifyContent: 'center',
                             padding: '8px 4px',
                             borderRadius: '8px',
-                            border: isSelected ? '2px solid var(--accent-primary, #10b981)' : '1px solid var(--border-subtle, rgba(255,255,255,0.1))',
+                            border: isSelected ? '2px solid var(--accent-primary, #10b981)' : (isOwnHold ? '2px dashed #10b981' : '1px solid var(--border-subtle, rgba(255,255,255,0.1))'),
                             background: isSelected ? 'rgba(16, 185, 129, 0.12)' : (isAvail ? 'var(--bg-elevated, rgba(255,255,255,0.03))' : 'rgba(0,0,0,0.2)'),
                             cursor: isAvail ? 'pointer' : 'not-allowed',
                             opacity: isAvail ? 1 : 0.55,
@@ -489,15 +566,102 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
               )}
             </div>
 
-            <div className="modal-footer">
-              <button
-                onClick={handleLockSlot}
-                disabled={!selectedSlot || !selectedChargerId || loading || (selectedSlot && selectedSlot.isFullyBooked)}
-                className="action-btn"
-                style={{ width: '100%', height: '46px', fontSize: '14px', gap: '8px' }}
-              >
-                {loading ? 'Locking Slot...' : 'Lock Selected Slot & Proceed'} <ArrowRight size={16} />
-              </button>
+            <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '14px 20px' }}>
+              {/* FIX 1 & FIX 7: Lock error displayed directly above bottom CTA button */}
+              {error && (
+                <div 
+                  className="alert-box-danger" 
+                  style={{ 
+                    width: '100%', 
+                    margin: 0, 
+                    padding: '8px 12px', 
+                    fontSize: '12.5px', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171'
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                  <span style={{ fontWeight: 600 }}>{error}</span>
+                </div>
+              )}
+
+              {/* FIX 3, 4, 5: Existing Hold Management beside CTA */}
+              {existingHold ? (
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    color: 'var(--text-primary)',
+                    fontSize: '12.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <Clock size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                    <div>
+                      {existingHold.chargerId === selectedChargerId ? (
+                        <span>
+                          <b>{existingHold.chargerId}</b> is already held for you until{' '}
+                          <b>{new Date(existingHold.lockedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>.
+                        </span>
+                      ) : (
+                        <span>
+                          You already hold <b>{existingHold.chargerId}</b> for this time (until{' '}
+                          {new Date(existingHold.lockedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleContinueExistingHold}
+                      className="action-btn"
+                      style={{ flex: 1, height: '42px', fontSize: '13px', justifyContent: 'center' }}
+                    >
+                      {existingHold.chargerId === selectedChargerId 
+                        ? 'Continue Existing Booking' 
+                        : `Continue with ${existingHold.chargerId}`}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={releasingHold}
+                      onClick={handleReleaseExistingHold}
+                      className="nav-btn"
+                      style={{ 
+                        flex: 1, 
+                        height: '42px', 
+                        fontSize: '12px', 
+                        justifyContent: 'center',
+                        border: '1px solid var(--border-subtle, rgba(255,255,255,0.15))'
+                      }}
+                    >
+                      {releasingHold ? 'Releasing...' : (
+                        existingHold.chargerId === selectedChargerId 
+                          ? 'Release Hold & Choose Another Charger' 
+                          : `Release ${existingHold.chargerId} & select ${selectedChargerId}`
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleLockSlot}
+                  disabled={!selectedSlot || !selectedChargerId || loading || (selectedSlot && selectedSlot.isFullyBooked)}
+                  className="action-btn"
+                  style={{ width: '100%', height: '46px', fontSize: '14px', gap: '8px' }}
+                >
+                  {loading ? 'Locking Slot...' : 'Lock Selected Slot & Proceed'} <ArrowRight size={16} />
+                </button>
+              )}
             </div>
           </>
         )}
