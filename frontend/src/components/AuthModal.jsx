@@ -164,6 +164,8 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
                 <UserIcon size={16} style={{ color: 'var(--text-muted)', marginRight: '8px' }} />
                 <input
                   type="text"
+                  name="name"
+                  autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
@@ -182,6 +184,8 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
               <Mail size={16} style={{ color: 'var(--text-muted)', marginRight: '8px' }} />
               <input
                 type="email"
+                name="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -199,6 +203,8 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
               <Lock size={16} style={{ color: 'var(--text-muted)', marginRight: '8px' }} />
               <input
                 type="password"
+                name="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -217,19 +223,23 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0 12px', height: '40px' }}>
                   <Car size={16} style={{ color: 'var(--text-muted)', marginRight: '8px' }} />
                   <select
+                    name="evModel"
                     value={evModel}
                     onChange={(e) => setEvModel(e.target.value)}
                     style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '13px', width: '100%', outline: 'none', cursor: 'pointer' }}
                   >
                     {EV_MODELS.map((model, i) => (
-                      <option key={i} value={model} style={{ background: 'var(--bg-secondary)', color: '#fff' }}>
+                      <option
+                        key={i}
+                        value={model}
+                        style={{ backgroundColor: '#ffffff', color: '#0f172a' }}
+                      >
                         {model}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
-
             </>
           )}
 

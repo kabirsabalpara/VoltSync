@@ -93,6 +93,13 @@ const OperatorDashboard = () => {
     setCheckInResult(null);
     setCheckInError(null);
 
+    let cleanCode = checkInInput.trim();
+    if (cleanCode.includes('/')) {
+      const parts = cleanCode.split('/');
+      cleanCode = parts[parts.length - 1];
+    }
+    cleanCode = cleanCode.toUpperCase();
+
     const token = localStorage.getItem('voltsync_token');
     try {
       const response = await fetch(`${API_BASE_URL}/bookings/check-in`, {
@@ -102,7 +109,7 @@ const OperatorDashboard = () => {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
-          checkInCode: checkInInput.trim().toUpperCase()
+          checkInCode: cleanCode
         })
       });
 

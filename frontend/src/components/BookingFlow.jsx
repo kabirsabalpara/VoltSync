@@ -41,8 +41,9 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
   const [selectedSlot, setSelectedSlot] = useState(initialSlots[0] || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [bookingId, setBookingId] = useState(null);
   const [chargerId, setChargerId] = useState(null);
+  const [selectedChargerId, setSelectedChargerId] = useState(null);
+  const [lockedUntil, setLockedUntil] = useState(null);
   const [confirmedBookingData, setConfirmedBookingData] = useState(null);
 
   // EV Vehicle & Battery Estimator
@@ -61,10 +62,42 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
   // Redirection Recommendation
   const [redirectionRec, setRedirectionRec] = useState(null);
 
+  // Derive chargers list for the currently selected slot (cinema-seat paradigm)
+  const currentSlotChargers = React.useMemo(() => {
+    if (selectedSlot?.chargers && selectedSlot.chargers.length > 0) {
+      return selectedSlot.chargers;
+    }
+    return (station?.chargers || []).map((c, i) => ({
+      id: typeof c === 'string' ? c : (c.id || `C${i + 1}`),
+      status: (typeof c === 'object' && c.status === 'maintenance') ? 'MAINTENANCE' : 'AVAILABLE'
+    }));
+  }, [selectedSlot, station]);
+
+  // Sync selected charger with an available one for current slot
+  useEffect(() => {
+    if (currentSlotChargers && currentSlotChargers.length > 0) {
+      const isCurrentValid = selectedChargerId && currentSlotChargers.some(c => c.id === selectedChargerId && c.status === 'AVAILABLE');
+      if (!isCurrentValid) {
+        const firstAvailable = currentSlotChargers.find(c => c.status === 'AVAILABLE');
+        setSelectedChargerId(firstAvailable ? firstAvailable.id : null);
+      }
+    }
+  }, [currentSlotChargers, selectedChargerId]);
+
   // Fetch live slot availability on open (background sync)
   useEffect(() => {
     fetchSlots();
   }, [station._id]);
+
+  // Light polling while slot selector is open to keep cinema-seat availability fresh
+  useEffect(() => {
+    if (step === 'slots') {
+      const poll = setInterval(() => {
+        fetchSlots();
+      }, 10000);
+      return () => clearInterval(poll);
+    }
+  }, [step, station._id]);
 
   const fetchSlots = async () => {
     try {
@@ -75,6 +108,12 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
         if (!selectedSlot || !data.slots.some(s => s.slotTime === selectedSlot.slotTime && !s.isFullyBooked)) {
           const firstAvail = data.slots.find(s => !s.isFullyBooked) || data.slots[0];
           setSelectedSlot(firstAvail);
+        } else {
+          // Update selectedSlot reference to maintain up-to-date charger statuses
+          const updatedSelected = data.slots.find(s => s.slotTime === selectedSlot.slotTime);
+          if (updatedSelected) {
+            setSelectedSlot(updatedSelected);
+          }
         }
       }
     } catch (err) {
@@ -122,7 +161,10 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
 
   // 1. Lock Slot Step
   const handleLockSlot = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !selectedChargerId) {
+      setError('Please select an available charger before proceeding.');
+      return;
+    }
     setLoading(true);
     setError(null);
     setRedirectionRec(null);
@@ -144,6 +186,8 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
         body: JSON.stringify({
           stationId: station._id,
           slotTime: selectedSlot.slotTime,
+          chargerId: selectedChargerId,
+          energyKwh: energyKwhNeeded,
           userEmail
         })
       });
@@ -153,11 +197,16 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
       if (response.status === 201) {
         setBookingId(data.bookingId);
         setChargerId(data.chargerId);
-        setTimeLeft(300); // Reset to 5 mins
+        setLockedUntil(data.lockedUntil);
+        const serverSeconds = data.lockedUntil 
+          ? Math.max(0, Math.floor((new Date(data.lockedUntil).getTime() - Date.now()) / 1000)) 
+          : 300;
+        setTimeLeft(serverSeconds);
         setTimerExpired(false);
         setStep('payment');
       } else if (response.status === 409) {
-        setError(data.error || 'This slot is already booked.');
+        setError(data.error || 'This charger has just been reserved. Please select another charger.');
+        fetchSlots(); // Instantly update cinema seat statuses
         if (data.alternative) {
           setRedirectionRec(data.alternative);
         }
@@ -206,7 +255,7 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
         slotTime={selectedSlot?.slotTime}
         energyKwh={energyKwhNeeded}
         userEmail={userEmail}
-        lockedUntil={new Date(Date.now() + 300000).toISOString()}
+        lockedUntil={lockedUntil}
         onClose={handleClose}
         onPaymentSuccess={(confirmedBooking) => {
           if (timerRef.current) clearInterval(timerRef.current);
@@ -340,7 +389,9 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
                       key={index}
                       type="button"
                       disabled={slot.isFullyBooked}
-                      onClick={() => setSelectedSlot(slot)}
+                      onClick={() => {
+                        setSelectedSlot(slot);
+                      }}
                       className={`slot-btn ${isSelected ? 'selected' : ''}`}
                     >
                       <span className="slot-time-text">{formatSlotTime(slot.slotTime)}</span>
@@ -354,12 +405,94 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
                   );
                 })}
               </div>
+
+              {/* Cinema-Seat Charger Selector for Selected Time Slot */}
+              {selectedSlot && (
+                <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={14} style={{ color: 'var(--accent-teal)' }} /> Select Charger (Seat):
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {currentSlotChargers.filter(c => c.status === 'AVAILABLE').length} of {currentSlotChargers.length} Available
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px' }}>
+                    {currentSlotChargers.map((charger) => {
+                      const isAvail = charger.status === 'AVAILABLE';
+                      const isSelected = selectedChargerId === charger.id;
+                      const isHeld = charger.status === 'HELD';
+                      const isBooked = charger.status === 'BOOKED';
+                      const isMaint = charger.status === 'MAINTENANCE';
+
+                      let badgeText = 'Available';
+                      let badgeColor = '#059669';
+                      let badgeBg = 'rgba(16, 185, 129, 0.12)';
+
+                      if (isHeld) {
+                        badgeText = 'Held';
+                        badgeColor = '#d97706';
+                        badgeBg = 'rgba(245, 158, 11, 0.12)';
+                      } else if (isBooked) {
+                        badgeText = 'Booked';
+                        badgeColor = '#dc2626';
+                        badgeBg = 'rgba(239, 68, 68, 0.12)';
+                      } else if (isMaint) {
+                        badgeText = 'Maint';
+                        badgeColor = '#6b7280';
+                        badgeBg = 'rgba(107, 114, 128, 0.12)';
+                      }
+
+                      return (
+                        <button
+                          key={charger.id}
+                          type="button"
+                          disabled={!isAvail}
+                          onClick={() => setSelectedChargerId(charger.id)}
+                          className={`charger-seat-btn ${isSelected ? 'selected' : ''}`}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '8px 4px',
+                            borderRadius: '8px',
+                            border: isSelected ? '2px solid var(--accent-primary, #10b981)' : '1px solid var(--border-subtle, rgba(255,255,255,0.1))',
+                            background: isSelected ? 'rgba(16, 185, 129, 0.12)' : (isAvail ? 'var(--bg-elevated, rgba(255,255,255,0.03))' : 'rgba(0,0,0,0.2)'),
+                            cursor: isAvail ? 'pointer' : 'not-allowed',
+                            opacity: isAvail ? 1 : 0.55,
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: isSelected ? 'var(--accent-primary, #10b981)' : 'var(--text-primary)' }}>
+                            {charger.id}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: '600',
+                              color: badgeColor,
+                              backgroundColor: badgeBg,
+                              padding: '2px 5px',
+                              borderRadius: '4px',
+                              marginTop: '3px'
+                            }}
+                          >
+                            {badgeText}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="modal-footer">
               <button
                 onClick={handleLockSlot}
-                disabled={!selectedSlot || loading}
+                disabled={!selectedSlot || !selectedChargerId || loading || (selectedSlot && selectedSlot.isFullyBooked)}
                 className="action-btn"
                 style={{ width: '100%', height: '46px', fontSize: '14px', gap: '8px' }}
               >
@@ -422,7 +555,7 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
 
                   <div className="qr-placeholder" style={{ padding: '8px', background: '#ffffff', borderRadius: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
                     <QRCodeView
-                      value={`${window.location.origin}/checkin/${confirmedBookingData?.qrToken || confirmedBookingData?._id || bookingId}`}
+                      value={confirmedBookingData?.checkInCode || ticketRef}
                       size={88}
                     />
                     <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#0a0f1d', marginTop: '4px', textAlign: 'center', lineHeight: 1.2 }}>

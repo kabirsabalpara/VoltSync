@@ -22,7 +22,7 @@ const FastPassModal = ({ booking, userEmail, onClose }) => {
 
   const bookingRef = booking.bookingReference || `VS-${booking._id ? booking._id.slice(-6).toUpperCase() : 'PASS'}`;
   const checkInCode = booking.checkInCode || `VP-${booking._id ? booking._id.slice(-8).toUpperCase() : 'AUTH'}`;
-  const qrPayload = typeof window !== 'undefined' ? `${window.location.origin}/checkin/${checkInCode}` : `https://voltsync.app/checkin/${checkInCode}`;
+  const qrPayload = checkInCode;
 
   const handlePrint = () => {
     window.print();

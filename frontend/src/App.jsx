@@ -686,7 +686,7 @@ const App = () => {
       <div className="network-pulse-banner">
         <div className="pulse-indicator-wrap">
           <span className="pulse-ping-dot"></span>
-          <span className="pulse-text">Live Telemetry • Surat Smart Grid • 98.4% Uptime</span>
+          <span className="pulse-text">VoltSync EV Network • Live Station Directory</span>
         </div>
         <div className="pulse-tag">
           <span className="pulse-badge-green">{stations.length} Hubs Online</span>

@@ -38,12 +38,12 @@ const updateBookingLifecycle = async (stationId = null) => {
   await Booking.updateMany(
     {
       ...query,
-      status: 'locked',
+      status: { $in: ['locked', 'payment_pending'] },
       lockedUntil: { $lte: now },
       active: true
     },
     {
-      $set: { status: 'expired', active: false }
+      $set: { status: 'expired', active: false, paymentStatus: 'failed' }
     }
   );
 
@@ -182,19 +182,7 @@ router.post('/lock', authMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Station not found.' });
     }
 
-    // Find active non-expired bookings for the normalized slot
-    const activeBookings = await Booking.find({
-      stationId,
-      slotTime: targetSlot,
-      active: true,
-      $or: [
-        { status: { $in: ['confirmed', 'active', 'payment_pending'] } },
-        { status: 'locked', lockedUntil: { $gt: now } }
-      ]
-    });
-
-    const bookedChargers = new Set(activeBookings.map(b => b.chargerId));
-
+    // Validate charger existence and maintenance if explicitly requested
     let targetCharger = null;
     if (chargerId) {
       const charger = station.chargers.find(c => c.id === chargerId);
@@ -204,11 +192,63 @@ router.post('/lock', authMiddleware, async (req, res) => {
       if (charger.status === 'maintenance') {
         return res.status(400).json({ success: false, error: `Charger ${chargerId} is currently under maintenance and cannot be reserved.` });
       }
+      targetCharger = charger;
+    }
+
+    // Requirement 9: Same user cannot book two chargers for the same overlapping time slot
+    const targetSlotEnd = new Date(targetSlot.getTime() + 60 * 60 * 1000);
+    const existingUserBooking = await Booking.findOne({
+      userEmail: userEmail.toLowerCase(),
+      active: true,
+      status: { $in: ['locked', 'payment_pending', 'confirmed', 'active'] },
+      $or: [
+        { slotTime: targetSlot },
+        {
+          slotTime: { $lt: targetSlotEnd },
+          $expr: {
+            $gt: [
+              { $add: ['$slotTime', { $multiply: [{ $ifNull: ['$slotDurationMinutes', 60] }, 60 * 1000] }] },
+              targetSlot
+            ]
+          }
+        }
+      ]
+    });
+
+    if (existingUserBooking) {
+      // Check if it was an expired hold
+      if (['locked', 'payment_pending'].includes(existingUserBooking.status) && existingUserBooking.lockedUntil && existingUserBooking.lockedUntil <= now) {
+        existingUserBooking.status = 'expired';
+        existingUserBooking.active = false;
+        existingUserBooking.paymentStatus = 'failed';
+        await existingUserBooking.save();
+      } else {
+        return res.status(409).json({
+          success: false,
+          error: 'You already have a reservation during this time slot.'
+        });
+      }
+    }
+
+    // Find active non-expired bookings for the normalized slot
+    const activeBookings = await Booking.find({
+      stationId,
+      slotTime: targetSlot,
+      active: true,
+      $or: [
+        { status: { $in: ['confirmed', 'active'] } },
+        { status: { $in: ['locked', 'payment_pending'] }, lockedUntil: { $gt: now } }
+      ]
+    });
+
+    const bookedChargers = new Set(activeBookings.map(b => b.chargerId));
+
+    if (chargerId) {
       if (bookedChargers.has(chargerId)) {
         const alternative = await findAlternativeStation(station, targetSlot, connectorType);
         return res.status(409).json({
           success: false,
-          error: `Charger ${chargerId} is already reserved for this slot.`,
+          error: 'This charger has just been reserved. Please select another charger.',
           fullyBooked: true,
           alternative: alternative ? {
             _id: alternative.station._id,
@@ -221,14 +261,13 @@ router.post('/lock', authMiddleware, async (req, res) => {
           } : null
         });
       }
-      targetCharger = charger;
     } else {
       targetCharger = station.chargers.find(c => c.status !== 'maintenance' && !bookedChargers.has(c.id));
       if (!targetCharger) {
         const alternative = await findAlternativeStation(station, targetSlot, connectorType);
         return res.status(409).json({
           success: false,
-          error: 'Station is fully booked for this time slot.',
+          error: 'This charger has just been reserved. Please select another charger.',
           fullyBooked: true,
           alternative: alternative ? {
             _id: alternative.station._id,
@@ -304,7 +343,7 @@ router.post('/lock', authMiddleware, async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        error: 'This slot was just reserved by another user. Please choose another slot.',
+        error: 'This charger has just been reserved. Please select another charger.',
         concurrencyConflict: true
       });
     }
@@ -395,9 +434,10 @@ router.post('/release', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Forbidden: This booking does not belong to you.' });
     }
 
-    if (booking.status === 'locked') {
+    if (booking.status === 'locked' || booking.status === 'payment_pending') {
       booking.status = 'cancelled';
       booking.active = false;
+      booking.paymentStatus = 'failed';
       await booking.save();
       return res.json({ success: true, message: 'Lock released successfully.' });
     }

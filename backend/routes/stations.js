@@ -211,7 +211,7 @@ router.get('/', async (req, res) => {
             active: true,
             $or: [
               { status: { $in: ['confirmed', 'active'] } },
-              { status: 'locked', lockedUntil: { $gt: now } }
+              { status: { $in: ['locked', 'payment_pending'] }, lockedUntil: { $gt: now } }
             ]
           });
           const bookedChargers = new Set(activeBookings.map(b => b.chargerId));
@@ -511,11 +511,26 @@ router.get('/:id/availability', async (req, res) => {
     await Booking.updateMany(
       {
         stationId: station._id,
-        status: 'locked',
-        lockedUntil: { $lte: now }
+        status: { $in: ['locked', 'payment_pending'] },
+        lockedUntil: { $lte: now },
+        active: true
       },
       {
-        $set: { status: 'expired', active: false }
+        $set: { status: 'expired', active: false, paymentStatus: 'failed' }
+      }
+    );
+
+    // Atomically complete past sessions (session ended: slotTime + 60 mins <= now)
+    const pastSessionCutoff = new Date(now.getTime() - 60 * 60 * 1000);
+    await Booking.updateMany(
+      {
+        stationId: station._id,
+        status: { $in: ['confirmed', 'active'] },
+        slotTime: { $lte: pastSessionCutoff },
+        active: true
+      },
+      {
+        $set: { status: 'completed', active: false }
       }
     );
 
@@ -525,7 +540,7 @@ router.get('/:id/availability', async (req, res) => {
       active: true,
       $or: [
         { status: { $in: ['confirmed', 'active'] } },
-        { status: 'locked', lockedUntil: { $gt: now } }
+        { status: { $in: ['locked', 'payment_pending'] }, lockedUntil: { $gt: now } }
       ]
     });
 
@@ -534,12 +549,49 @@ router.get('/:id/availability', async (req, res) => {
 
     for (let i = 0; i < 8; i++) {
       const slotTime = new Date(currentHour.getTime() + i * 60 * 60 * 1000);
-      const bookedChargerIds = bookings
-        .filter(b => b.slotTime.getTime() === slotTime.getTime())
-        .map(b => b.chargerId);
+      const slotEnd = new Date(slotTime.getTime() + 60 * 60 * 1000);
 
-      const availableChargers = usableChargers
-        .filter(c => !bookedChargerIds.includes(c.id))
+      // Resolve each charger state for this specific slot (cinema-seat paradigm)
+      const chargerStates = station.chargers.map(charger => {
+        if (charger.status === 'maintenance') {
+          return {
+            id: charger.id,
+            status: 'MAINTENANCE'
+          };
+        }
+
+        const blockingBooking = bookings.find(b => {
+          if (b.chargerId !== charger.id) return false;
+          const bStart = b.slotTime;
+          const bEnd = new Date(b.slotTime.getTime() + (b.slotDurationMinutes || 60) * 60 * 1000);
+          return slotTime < bEnd && slotEnd > bStart;
+        });
+
+        if (blockingBooking) {
+          if (['confirmed', 'active'].includes(blockingBooking.status)) {
+            return {
+              id: charger.id,
+              status: 'BOOKED',
+              bookingReference: blockingBooking.bookingReference
+            };
+          }
+          if (['locked', 'payment_pending'].includes(blockingBooking.status) && blockingBooking.lockedUntil > now) {
+            return {
+              id: charger.id,
+              status: 'HELD',
+              lockedUntil: blockingBooking.lockedUntil
+            };
+          }
+        }
+
+        return {
+          id: charger.id,
+          status: 'AVAILABLE'
+        };
+      });
+
+      const availableChargers = chargerStates
+        .filter(c => c.status === 'AVAILABLE')
         .map(c => c.id);
 
       slots.push({
@@ -548,6 +600,7 @@ router.get('/:id/availability', async (req, res) => {
         usableChargers: usableChargers.length,
         availableCount: availableChargers.length,
         availableChargerIds: availableChargers,
+        chargers: chargerStates,
         isFullyBooked: availableChargers.length === 0
       });
     }

@@ -131,11 +131,12 @@ router.post('/create-order', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Unauthorized: Booking does not belong to you.' });
     }
 
-    // Check expiration if locked
+    // Check expiration if locked or payment_pending
     const now = new Date();
-    if (booking.status === 'locked' && booking.lockedUntil < now) {
+    if (['locked', 'payment_pending'].includes(booking.status) && booking.lockedUntil && booking.lockedUntil <= now) {
       booking.status = 'expired';
       booking.active = false;
+      booking.paymentStatus = 'failed';
       await booking.save();
       return res.status(400).json({ success: false, error: 'Your reservation hold has expired. Please select another slot.' });
     }
@@ -314,13 +315,14 @@ router.post('/demo-pay', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Booking reservation has been cancelled.' });
     }
 
-    // Verify lock expiration
+    // Verify lock expiration for both locked and payment_pending holds
     const now = new Date();
-    if (booking.status === 'locked' && booking.lockedUntil < now) {
+    if (['locked', 'payment_pending'].includes(booking.status) && booking.lockedUntil && booking.lockedUntil <= now) {
       booking.status = 'expired';
       booking.active = false;
+      booking.paymentStatus = 'failed';
       await booking.save();
-      return res.status(400).json({ success: false, error: 'Your reservation hold has expired.' });
+      return res.status(400).json({ success: false, error: 'Your reservation hold has expired. Please reserve the charger again.' });
     }
 
     const station = await Station.findById(booking.stationId);
@@ -470,13 +472,14 @@ router.post('/verify', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Payment Order ID mismatch with booked order.' });
     }
 
-    // Lock expiration check
+    // Lock expiration check for both locked and payment_pending holds
     const now = new Date();
-    if (booking.status === 'locked' && booking.lockedUntil < now) {
+    if (['locked', 'payment_pending'].includes(booking.status) && booking.lockedUntil && booking.lockedUntil <= now) {
       booking.status = 'expired';
       booking.active = false;
+      booking.paymentStatus = 'failed';
       await booking.save();
-      return res.status(400).json({ success: false, error: 'Your reservation hold has expired.' });
+      return res.status(400).json({ success: false, error: 'Your reservation hold has expired. Please reserve the charger again.' });
     }
 
     let verifiedSignature = null;

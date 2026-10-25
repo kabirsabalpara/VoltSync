@@ -234,10 +234,9 @@ const PaymentGatewayModal = ({
                 </div>
               </div>
 
-              {/* Verified Digital QR Pass Check-in Box */}
               <div style={{ marginTop: '14px', padding: '12px', background: 'rgba(16, 185, 129, 0.06)', border: '1px dashed rgba(16, 185, 129, 0.4)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{ background: '#ffffff', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
-                  <QRCodeView value={typeof window !== 'undefined' ? `${window.location.origin}/checkin/${paymentReceipt.checkInCode || 'VP-ACTIVE'}` : `https://voltsync.app/checkin/${paymentReceipt.checkInCode || 'VP-ACTIVE'}`} size={76} />
+                  <QRCodeView value={paymentReceipt.checkInCode || 'VP-ACTIVE'} size={76} />
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
