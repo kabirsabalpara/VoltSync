@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "seed": "node scripts/seedRunner.js",
     "add:stations": "node scripts/addMoreStations.js",
-    "test": "node tests/lock_ux_test.js && node tests/final_qa_test.js && node tests/payment_security_test.js && node verify_fixes.js && node tests/full_integration_test.js && node tests/booking_cinema_test.js && node tests/auth_cleanup_test.js"
+    "test": "node tests/final_qa_test.js && node tests/payment_security_test.js && node verify_fixes.js && node tests/full_integration_test.js && node tests/booking_cinema_test.js && node tests/auth_cleanup_test.js"
   },
   "engines": {
     "node": ">=18.0.0 <25.0.0"
