@@ -59,8 +59,18 @@ async function signup(email, role) {
   return login.body?.token || null;
 }
 
+let localServer = null;
+
 async function main() {
   console.log(`\nVoltSync fix verification — target: ${API_BASE}\n`);
+
+  try {
+    await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(1000) });
+  } catch (e) {
+    const app = require('./server');
+    localServer = app.listen(5000);
+    await new Promise((r) => setTimeout(r, 600));
+  }
 
   // ---- Setup: two drivers + one operator ----
   const driver1Email = `driver1_${stamp}@test.com`;
@@ -305,6 +315,8 @@ function printSummary() {
     console.log('All automated checks passed. Still complete the manual checklist');
     console.log('(VERIFICATION_CHECKLIST.md) for the items that can\'t be tested over HTTP.\n');
   }
+  if (localServer) localServer.close();
+  process.exit(fail > 0 ? 1 : 0);
 }
 
 main().catch(err => {

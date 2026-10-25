@@ -1,21 +1,38 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import { MapPin, Navigation, Compass, ArrowRight, Zap, EyeOff } from 'lucide-react';
+import { MapPin, Navigation, Compass, ArrowRight, Zap, EyeOff, AlertCircle } from 'lucide-react';
 import { getCurrentCoordinates } from '../services/locationService';
 
-// Coordinates dictionary for quick navigation
+// Priority Indian Charging Hubs
 const QUICK_HUBS = [
-  { name: 'Surat (Smart Grid Hub)', lat: 21.1702, lng: 72.8311 },
-  { name: 'Ahmedabad (Expressway)', lat: 23.0225, lng: 72.5714 },
-  { name: 'Mumbai (Metropolitan)', lat: 19.0760, lng: 72.8777 },
-  { name: 'Delhi NCR (Capital Corridor)', lat: 28.6139, lng: 77.2090 },
-  { name: 'Bengaluru (Tech Corridor)', lat: 12.9716, lng: 77.5946 },
+  { id: 'surat', name: 'Surat', fullName: 'Surat (Smart Grid Hub)', tag: 'Primary Grid', lat: 21.1702, lng: 72.8311 },
+  { id: 'ahmedabad', name: 'Ahmedabad', fullName: 'Ahmedabad (Expressway)', tag: 'Fast Corridor', lat: 23.0225, lng: 72.5714 },
+  { id: 'mumbai', name: 'Mumbai', fullName: 'Mumbai (Metropolitan)', tag: 'Fast Corridor', lat: 19.0760, lng: 72.8777 },
+  { id: 'delhi', name: 'Delhi NCR', fullName: 'Delhi NCR (Capital Corridor)', tag: 'Fast Corridor', lat: 28.6139, lng: 77.2090 },
+  { id: 'bengaluru', name: 'Bengaluru', fullName: 'Bengaluru (Tech Corridor)', tag: 'Fast Corridor', lat: 12.9716, lng: 77.5946 },
+];
+
+// Secondary global reference network points for visual depth
+const GLOBAL_HUBS = [
+  { name: 'London', lat: 51.5074, lng: -0.1278 },
+  { name: 'New York', lat: 40.7128, lng: -74.0060 },
+  { name: 'Tokyo', lat: 35.6762, lng: 139.6503 },
+  { name: 'Dubai', lat: 25.2048, lng: 55.2708 },
+  { name: 'Singapore', lat: 1.3521, lng: 103.8198 },
+];
+
+// Corridor arcs between major Indian charging nodes
+const NETWORK_CONNECTIONS = [
+  ['surat', 'ahmedabad'],
+  ['surat', 'mumbai'],
+  ['mumbai', 'bengaluru'],
+  ['mumbai', 'delhi'],
 ];
 
 /**
  * Procedural Earth Texture Generator
- * Creates a beautiful dark-mode continents & ocean texture with city lights
- * without requiring multi-megabyte external image downloads.
+ * Creates a high-fidelity dark-mode continental map with subtle oceanic depth,
+ * latitude/longitude coordinate grid, and glowing electrical hubs.
  */
 function createEarthCanvas() {
   const width = 2048;
@@ -25,37 +42,37 @@ function createEarthCanvas() {
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  // Deep obsidian oceanic base
+  // Deep obsidian & navy oceanic base
   const oceanGrad = ctx.createLinearGradient(0, 0, 0, height);
-  oceanGrad.addColorStop(0, '#061325');
-  oceanGrad.addColorStop(0.5, '#0b1d3a');
-  oceanGrad.addColorStop(1, '#061325');
+  oceanGrad.addColorStop(0, '#040d1a');
+  oceanGrad.addColorStop(0.3, '#07162c');
+  oceanGrad.addColorStop(0.5, '#0a1e3b');
+  oceanGrad.addColorStop(0.7, '#07162c');
+  oceanGrad.addColorStop(1, '#040d1a');
   ctx.fillStyle = oceanGrad;
   ctx.fillRect(0, 0, width, height);
 
-  // Lat/Long subtle grid lines
-  ctx.strokeStyle = 'rgba(16, 185, 129, 0.07)';
+  // Subtle coordinate grid lines
+  ctx.strokeStyle = 'rgba(16, 185, 129, 0.05)';
   ctx.lineWidth = 1;
-  for (let lat = 0; lat <= height; lat += height / 12) {
+  for (let lat = 0; lat <= height; lat += height / 18) {
     ctx.beginPath();
     ctx.moveTo(0, lat);
     ctx.lineTo(width, lat);
     ctx.stroke();
   }
-  for (let lng = 0; lng <= width; lng += width / 24) {
+  for (let lng = 0; lng <= width; lng += width / 36) {
     ctx.beginPath();
     ctx.moveTo(lng, 0);
     ctx.lineTo(lng, height);
     ctx.stroke();
   }
 
-  // Draw procedural continental landmasses
-  ctx.fillStyle = '#0f2942';
-  ctx.strokeStyle = '#1e405f';
-  ctx.lineWidth = 2;
-
-  // Approximate continents via smooth bezier polygons
-  const drawContinent = (points) => {
+  // Draw procedural continental landmasses with subtle coastline strokes
+  const drawContinent = (points, fill = '#0d253d', stroke = '#183b5e') => {
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     points.forEach(([xPct, yPct], i) => {
       const x = xPct * width;
@@ -68,77 +85,70 @@ function createEarthCanvas() {
     ctx.stroke();
   };
 
-  // Eurasia & India
+  // Eurasia & North Africa
   drawContinent([
-    [0.45, 0.20], [0.55, 0.18], [0.70, 0.20], [0.82, 0.24], [0.85, 0.38],
-    [0.78, 0.45], [0.72, 0.48], [0.68, 0.58], [0.66, 0.54], [0.62, 0.46],
-    [0.55, 0.40], [0.50, 0.36], [0.45, 0.32]
-  ]);
-  // India Subcontinent Highlight
-  ctx.fillStyle = '#143854';
-  drawContinent([
-    [0.68, 0.38], [0.73, 0.38], [0.74, 0.46], [0.71, 0.54], [0.68, 0.48]
+    [0.44, 0.18], [0.55, 0.16], [0.70, 0.18], [0.83, 0.22], [0.87, 0.36],
+    [0.80, 0.44], [0.74, 0.46], [0.72, 0.52], [0.66, 0.54], [0.63, 0.45],
+    [0.55, 0.40], [0.49, 0.35], [0.44, 0.30]
   ]);
 
-  // Africa
-  ctx.fillStyle = '#0f2942';
+  // India Subcontinent (Elevated dark emerald-navy tone for telemetry focus)
   drawContinent([
-    [0.48, 0.38], [0.56, 0.40], [0.58, 0.50], [0.55, 0.68], [0.50, 0.76],
-    [0.47, 0.62], [0.44, 0.48]
+    [0.678, 0.370], [0.732, 0.372], [0.745, 0.445], [0.718, 0.540], [0.676, 0.470]
+  ], '#12334f', '#10b98155');
+
+  // Africa
+  drawContinent([
+    [0.47, 0.36], [0.56, 0.38], [0.58, 0.48], [0.55, 0.66], [0.49, 0.75],
+    [0.46, 0.62], [0.43, 0.46]
   ]);
 
   // North America
   drawContinent([
-    [0.10, 0.20], [0.22, 0.18], [0.28, 0.25], [0.26, 0.42], [0.20, 0.46],
-    [0.14, 0.42], [0.08, 0.32]
+    [0.09, 0.18], [0.22, 0.16], [0.29, 0.24], [0.27, 0.42], [0.20, 0.45],
+    [0.13, 0.40], [0.07, 0.30]
   ]);
 
   // South America
   drawContinent([
-    [0.22, 0.50], [0.28, 0.52], [0.32, 0.62], [0.28, 0.82], [0.24, 0.78],
-    [0.20, 0.60]
+    [0.21, 0.48], [0.28, 0.50], [0.32, 0.60], [0.28, 0.80], [0.23, 0.76],
+    [0.19, 0.58]
   ]);
 
   // Australia
   drawContinent([
-    [0.82, 0.62], [0.90, 0.62], [0.92, 0.74], [0.84, 0.78], [0.80, 0.70]
+    [0.81, 0.60], [0.89, 0.60], [0.92, 0.72], [0.84, 0.76], [0.79, 0.68]
   ]);
 
-  // Add twinkling EV city hubs (Indian subcontinent & global networks)
-  const cities = [
-    // India EV hubs
-    [0.702, 0.442], // Surat / Gujarat
-    [0.701, 0.435], // Ahmedabad
-    [0.702, 0.448], // Mumbai
-    [0.715, 0.421], // Delhi
-    [0.715, 0.464], // Bengaluru
-    [0.718, 0.451], // Hyderabad
-    // Global references
-    [0.500, 0.270], // London
-    [0.240, 0.350], // New York
-    [0.120, 0.380], // San Francisco
-    [0.840, 0.380], // Tokyo
-    [0.580, 0.420], // Dubai
+  // City telemetry pinpoints on map texture
+  const cityDots = [
+    [0.702, 0.442, true],  // Surat
+    [0.701, 0.435, true],  // Ahmedabad
+    [0.702, 0.448, true],  // Mumbai
+    [0.715, 0.421, true],  // Delhi
+    [0.715, 0.464, true],  // Bengaluru
+    [0.500, 0.270, false], // London
+    [0.240, 0.350, false], // New York
+    [0.840, 0.380, false], // Tokyo
+    [0.580, 0.420, false], // Dubai
   ];
 
-  cities.forEach(([xPct, yPct], index) => {
+  cityDots.forEach(([xPct, yPct, isIndia]) => {
     const x = xPct * width;
     const y = yPct * height;
-    const isIndiaHub = index < 6;
+    const radius = isIndia ? 8 : 4;
 
-    // Outer glow
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, isIndiaHub ? 12 : 6);
-    glow.addColorStop(0, isIndiaHub ? 'rgba(16, 185, 129, 0.9)' : 'rgba(56, 189, 248, 0.6)');
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    glow.addColorStop(0, isIndia ? 'rgba(16, 185, 129, 0.85)' : 'rgba(56, 189, 248, 0.5)');
     glow.addColorStop(1, 'rgba(16, 185, 129, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(x, y, isIndiaHub ? 12 : 6, 0, Math.PI * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Bright core
-    ctx.fillStyle = isIndiaHub ? '#10b981' : '#e0f2fe';
+    ctx.fillStyle = isIndia ? '#34d399' : '#bae6fd';
     ctx.beginPath();
-    ctx.arc(x, y, isIndiaHub ? 2.5 : 1.5, 0, Math.PI * 2);
+    ctx.arc(x, y, isIndia ? 2 : 1, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -157,24 +167,47 @@ function latLngToVector3(lat, lng, radius) {
   return new THREE.Vector3(x, y, z);
 }
 
+/**
+ * Create a curved 3D corridor arc between two coordinates on the globe
+ */
+function createNetworkArc(startVec, endVec, globeRadius) {
+  const distance = startVec.distanceTo(endVec);
+  const mid = startVec.clone().add(endVec).multiplyScalar(0.5);
+  // Elevate mid-point above globe surface proportional to distance
+  const altitude = globeRadius + Math.min(0.35, distance * 0.28);
+  mid.normalize().multiplyScalar(altitude);
+
+  const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec);
+  const points = curve.getPoints(24);
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+  const material = new THREE.LineBasicMaterial({
+    color: 0x10b981,
+    transparent: true,
+    opacity: 0.38,
+    linewidth: 1.5,
+  });
+
+  return new THREE.Line(geometry, material);
+}
+
 export default function GlobeIntro({ onSelectLocation, onSkip }) {
   const containerRef = useRef(null);
   const [selectedHub, setSelectedHub] = useState(QUICK_HUBS[0]);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [isZooming, setIsZooming] = useState(false);
-  const [zoomStage, setZoomStage] = useState('global'); // 'global' -> 'region' -> 'city' -> 'ready'
+  const [zoomStage, setZoomStage] = useState('orbit'); // 'orbit' -> 'descend' -> 'ready'
   const [webGLError, setWebGLError] = useState(false);
+  const isTransitioningRef = useRef(false);
 
   // Check reduced motion preference
   const prefersReducedMotion = typeof window !== 'undefined' &&
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const isZoomingRef = useRef(false);
-
   useEffect(() => {
     if (prefersReducedMotion) {
-      // Respect user's accessibility setting: Skip 3D animation immediately
       onSelectLocation(QUICK_HUBS[0].lat, QUICK_HUBS[0].lng, QUICK_HUBS[0].name);
       return;
     }
@@ -182,12 +215,15 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
     const container = containerRef.current;
     if (!container) return;
 
-    // Check WebGL availability
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance'
+      });
     } catch (e) {
-      console.warn('WebGL initialization failed, falling back:', e);
+      console.warn('WebGL initialization failed, switching to static fallback:', e);
       setWebGLError(true);
       return;
     }
@@ -196,26 +232,28 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
     const height = container.clientHeight || window.innerHeight;
 
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, 1.2, 5.8);
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000);
+    camera.position.set(0, 1.1, 5.6);
 
-    // Subtle atmospheric ambient & directional light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
+    // Cinematic Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.15);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0x10b981, 1.4);
-    dirLight.position.set(5, 3, 5);
-    scene.add(dirLight);
+    const emeraldKeyLight = new THREE.DirectionalLight(0x10b981, 1.4);
+    emeraldKeyLight.position.set(4, 3, 4);
+    scene.add(emeraldKeyLight);
 
-    const rimLight = new THREE.DirectionalLight(0x0284c7, 1.2);
-    rimLight.position.set(-5, -2, -4);
-    scene.add(rimLight);
+    const cyanRimLight = new THREE.DirectionalLight(0x0284c7, 1.1);
+    cyanRimLight.position.set(-5, -2, -3);
+    scene.add(cyanRimLight);
 
-    // Create Earth sphere
+    // Earth Sphere
     const earthRadius = 2.0;
     const earthGeometry = new THREE.SphereGeometry(earthRadius, 64, 64);
     const earthCanvas = createEarthCanvas();
@@ -225,17 +263,17 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
 
     const earthMaterial = new THREE.MeshStandardMaterial({
       map: earthTexture,
-      roughness: 0.65,
-      metalness: 0.25,
-      emissive: new THREE.Color(0x041b12),
-      emissiveIntensity: 0.35,
+      roughness: 0.62,
+      metalness: 0.22,
+      emissive: new THREE.Color(0x031810),
+      emissiveIntensity: 0.3,
     });
 
     const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
     scene.add(earthMesh);
 
-    // Outer subtle atmospheric glow sphere
-    const atmosGeometry = new THREE.SphereGeometry(earthRadius * 1.035, 48, 48);
+    // Atmospheric outer soft glow sphere
+    const atmosGeometry = new THREE.SphereGeometry(earthRadius * 1.028, 48, 48);
     const atmosMaterial = new THREE.MeshBasicMaterial({
       color: 0x10b981,
       transparent: true,
@@ -245,64 +283,96 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
     const atmosMesh = new THREE.Mesh(atmosGeometry, atmosMaterial);
     scene.add(atmosMesh);
 
-    // Create pulse markers for charging hubs
+    // Hub Markers Group
     const markerGroup = new THREE.Group();
-    QUICK_HUBS.forEach((hub) => {
-      const pos = latLngToVector3(hub.lat, hub.lng, earthRadius * 1.01);
-      const markerGeo = new THREE.SphereGeometry(0.04, 16, 16);
-      const markerMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-      const marker = new THREE.Mesh(markerGeo, markerMat);
-      marker.position.copy(pos);
-      markerGroup.add(marker);
+    const hubPositions = {};
 
-      // Outer beacon ring
-      const ringGeo = new THREE.RingGeometry(0.05, 0.08, 24);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+    // 1. Primary Indian Charging Hubs
+    QUICK_HUBS.forEach((hub) => {
+      const pos = latLngToVector3(hub.lat, hub.lng, earthRadius * 1.008);
+      hubPositions[hub.id] = pos;
+
+      // Solid emerald center dot
+      const dotGeo = new THREE.SphereGeometry(0.038, 16, 16);
+      const dotMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(pos);
+      markerGroup.add(dot);
+
+      // Outer pulse ring
+      const ringGeo = new THREE.RingGeometry(0.048, 0.082, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x34d399,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85
+      });
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.position.copy(pos.clone().multiplyScalar(1.002));
       ring.lookAt(pos.clone().multiplyScalar(2));
+      ring.userData = { isPulseRing: true, baseScale: 1.0 };
       markerGroup.add(ring);
     });
+
+    // 2. Subtle Global Nodes
+    GLOBAL_HUBS.forEach((hub) => {
+      const pos = latLngToVector3(hub.lat, hub.lng, earthRadius * 1.006);
+      const dotGeo = new THREE.SphereGeometry(0.022, 12, 12);
+      const dotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(pos);
+      markerGroup.add(dot);
+    });
+
+    // 3. Subtle Charging Network Arcs
+    NETWORK_CONNECTIONS.forEach(([startId, endId]) => {
+      const startVec = hubPositions[startId];
+      const endVec = hubPositions[endId];
+      if (startVec && endVec) {
+        const arc = createNetworkArc(startVec, endVec, earthRadius);
+        markerGroup.add(arc);
+      }
+    });
+
     earthMesh.add(markerGroup);
 
-    // Initial orientation: Rotate Earth so India is facing the camera
+    // Initial orientation: Indian subcontinent angled towards viewer
     earthMesh.rotation.y = -Math.PI * 0.45;
-    earthMesh.rotation.x = 0.25;
+    earthMesh.rotation.x = 0.22;
 
     let animationFrameId;
     let isDisposed = false;
-    let targetCameraDistance = 5.8;
-    let targetCameraLookAt = new THREE.Vector3(0, 0, 0);
+    let targetCameraDistance = 5.6;
     let targetEarthRotationY = earthMesh.rotation.y;
     let targetEarthRotationX = earthMesh.rotation.x;
 
-    // Animation Loop
     const clock = new THREE.Clock();
+
     const animate = () => {
       if (isDisposed) return;
       animationFrameId = requestAnimationFrame(animate);
 
       const delta = clock.getDelta();
+      const elapsed = clock.getElapsedTime();
 
-      // Slow passive idle rotation when not zooming
-      if (!isZoomingRef.current) {
+      if (!isTransitioningRef.current) {
+        // Continuous smooth idle rotation
         earthMesh.rotation.y += delta * 0.04;
       } else {
-        // Interpolate smooth camera glide towards target hub
-        earthMesh.rotation.y += (targetEarthRotationY - earthMesh.rotation.y) * 0.06;
-        earthMesh.rotation.x += (targetEarthRotationX - earthMesh.rotation.x) * 0.06;
+        // Damped interpolation towards targeted corridor
+        earthMesh.rotation.y += (targetEarthRotationY - earthMesh.rotation.y) * 0.07;
+        earthMesh.rotation.x += (targetEarthRotationX - earthMesh.rotation.x) * 0.07;
 
-        camera.position.z += (targetCameraDistance - camera.position.z) * 0.07;
-        camera.position.y += (0.1 - camera.position.y) * 0.07;
-        camera.lookAt(targetCameraLookAt);
+        camera.position.z += (targetCameraDistance - camera.position.z) * 0.08;
+        camera.position.y += (0.15 - camera.position.y) * 0.08;
       }
 
-      // Marker beacon pulse
-      const time = clock.getElapsedTime();
+      // Beacon ring pulsating animation
       markerGroup.children.forEach((child, i) => {
-        if (child.isMesh && child.geometry.type === 'RingGeometry') {
-          const scale = 1 + Math.sin(time * 3 + i) * 0.25;
-          child.scale.set(scale, scale, scale);
+        if (child.userData?.isPulseRing) {
+          const s = 1.0 + Math.sin(elapsed * 3.2 + i * 0.8) * 0.28;
+          child.scale.set(s, s, s);
+          child.material.opacity = 0.5 + Math.cos(elapsed * 3.2 + i * 0.8) * 0.4;
         }
       });
 
@@ -311,7 +381,6 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
 
     animate();
 
-    // Resize handler
     const handleResize = () => {
       if (!container || isDisposed) return;
       const w = container.clientWidth || window.innerWidth;
@@ -322,49 +391,44 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
     };
     window.addEventListener('resize', handleResize);
 
-    // Save controller for zoom action
+    // Zoom controller invoked on city selection or GPS detection
     container._zoomToLocation = (lat, lng, name) => {
-      isZoomingRef.current = true;
+      isTransitioningRef.current = true;
       setIsZooming(true);
-      setZoomStage('region');
+      setZoomStage('descend');
 
-
-      // Calculate required Earth rotation so target lat/lng aligns with camera at (0, 0, Z)
       const targetPhi = (90 - lat) * (Math.PI / 180);
       const targetTheta = (lng + 180) * (Math.PI / 180);
 
-      // Adjust rotation targets
       targetEarthRotationY = -targetTheta + Math.PI * 1.5;
       targetEarthRotationX = targetPhi - Math.PI * 0.5;
 
-      // Stage 1: Zoom to country region (1.2s)
+      // Phase 1: Descent glide (0.8s)
       setTimeout(() => {
         if (isDisposed) return;
-        targetCameraDistance = 3.6;
-        setZoomStage('city');
+        targetCameraDistance = 3.4;
+        setZoomStage('descend');
       }, 700);
 
-      // Stage 2: Zoom close to city hub (2.1s)
+      // Phase 2: Close corridor entry (1.6s)
       setTimeout(() => {
         if (isDisposed) return;
         targetCameraDistance = 2.45;
         setZoomStage('ready');
-      }, 1600);
+      }, 1500);
 
-      // Stage 3: Finish and handover coordinates to app (2.7s)
+      // Phase 3: Handover to local map (2.3s total)
       setTimeout(() => {
         if (isDisposed) return;
         onSelectLocation(lat, lng, name);
-      }, 2500);
+      }, 2300);
     };
 
-    // Cleanup & WebGL Disposal
     return () => {
       isDisposed = true;
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
 
-      // Cleanly dispose Three.js geometries and textures
       earthGeometry.dispose();
       earthMaterial.dispose();
       earthTexture.dispose();
@@ -384,6 +448,7 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
 
   const handleStartZoom = (hub) => {
     setSelectedHub(hub);
+    setLocationError(null);
     if (containerRef.current?._zoomToLocation) {
       containerRef.current._zoomToLocation(hub.lat, hub.lng, hub.name);
     } else {
@@ -393,30 +458,53 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
 
   const handleDetectGPS = async () => {
     setIsLocating(true);
+    setLocationError(null);
     try {
       const coords = await getCurrentCoordinates({ enableHighAccuracy: true });
-      const customHub = {
-        name: `Live Location (${coords.lat.toFixed(2)}°, ${coords.lng.toFixed(2)}°)`,
+      const gpsHub = {
+        id: 'gps',
+        name: 'Current Location',
+        fullName: `Live Position (${coords.lat.toFixed(2)}°, ${coords.lng.toFixed(2)}°)`,
         lat: coords.lat,
-        lng: coords.lng
+        lng: coords.lng,
+        isGps: true
       };
-      handleStartZoom(customHub);
+      setSelectedHub(gpsHub);
+      if (containerRef.current?._zoomToLocation) {
+        containerRef.current._zoomToLocation(coords.lat, coords.lng, 'Live GPS Position');
+      } else {
+        onSelectLocation(coords.lat, coords.lng, 'Live GPS Position');
+      }
     } catch (err) {
-      console.warn('GPS detection failed, falling back to Surat hub:', err);
-      handleStartZoom(QUICK_HUBS[0]);
+      console.warn('Location detection denied or failed:', err);
+      setLocationError('Location access was not granted. Select a city instead.');
     } finally {
       setIsLocating(false);
     }
   };
 
-  // WebGL Fallback interface
+  // Dynamic Loading Message based on selected hub or GPS
+  const loadingStatusText = useMemo(() => {
+    if (selectedHub?.isGps) {
+      return {
+        primary: 'Finding Chargers Near You',
+        secondary: 'Locating verified fast charging hubs around your position'
+      };
+    }
+    return {
+      primary: `Connecting to ${selectedHub?.name || 'Surat'} Charging Network`,
+      secondary: 'Finding available fast chargers nearby'
+    };
+  }, [selectedHub]);
+
+  // Static Fallback Interface if WebGL fails
   if (webGLError) {
     return (
       <div className="globe-fallback-screen" style={{
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'linear-gradient(135deg, #061325 0%, #0b1d3a 100%)',
+        background: 'linear-gradient(135deg, #050d1a 0%, #0b1d3a 100%)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -426,26 +514,26 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
         textAlign: 'center'
       }}>
         <div style={{
-          background: 'rgba(16, 185, 129, 0.1)',
+          background: 'rgba(16, 185, 129, 0.12)',
           border: '1px solid #10b981',
-          padding: '12px 20px',
+          padding: '10px 18px',
           borderRadius: '24px',
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          marginBottom: '20px'
+          marginBottom: '16px'
         }}>
           <Zap size={18} color="#10b981" />
-          <span style={{ fontWeight: 700, fontSize: '13px', color: '#10b981' }}>VoltSync EV Station Network</span>
+          <span style={{ fontWeight: 700, fontSize: '13px', color: '#10b981' }}>VoltSync Fast Charging Network</span>
         </div>
-        <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 12px 0' }}>Select Your Charging Region</h1>
-        <p style={{ color: '#94a3b8', maxWidth: '480px', marginBottom: '28px', fontSize: '15px' }}>
-          Connect to verified high-speed EV chargers with real-time slot holds and instant FastPass booking.
+        <h1 style={{ fontSize: '30px', fontWeight: 800, margin: '0 0 10px 0' }}>Select Your Charging Region</h1>
+        <p style={{ color: '#94a3b8', maxWidth: '460px', marginBottom: '24px', fontSize: '14px', lineHeight: 1.5 }}>
+          Access real-time high-speed EV chargers with guaranteed 5-minute reservation locks and digital FastPass checkout.
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '540px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '520px' }}>
           {QUICK_HUBS.map((hub) => (
             <button
-              key={hub.name}
+              key={hub.id}
               onClick={() => onSelectLocation(hub.lat, hub.lng, hub.name)}
               className="action-btn"
               style={{ padding: '12px 20px', fontSize: '14px', borderRadius: '12px' }}
@@ -463,18 +551,18 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
       position: 'fixed',
       inset: 0,
       zIndex: 9999,
-      background: 'radial-gradient(ellipse at center, #0b1d3a 0%, #050d1a 100%)',
+      background: 'radial-gradient(ellipse at center, #091a32 0%, #030811 100%)',
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
-      padding: '24px',
+      padding: '20px 24px',
       color: '#ffffff'
     }}>
       {/* Three.js Canvas Container */}
       <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
 
-      {/* Top Header Controls */}
+      {/* Top Header: Brand & Skip Button */}
       <div style={{
         position: 'relative',
         zIndex: 10,
@@ -482,10 +570,10 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        maxWidth: '1200px',
+        maxWidth: '1280px',
         margin: '0 auto'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
             background: 'linear-gradient(135deg, #10b981, #059669)',
             padding: '8px',
@@ -496,8 +584,12 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
             <Zap size={22} color="#ffffff" />
           </div>
           <div>
-            <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.5px' }}>VoltSync</div>
-            <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 600 }}>3D Global Grid Telemetry</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.1 }}>
+              VoltSync
+            </div>
+            <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 600, letterSpacing: '0.2px' }}>
+              3D Global Grid Telemetry
+            </div>
           </div>
         </div>
 
@@ -507,7 +599,7 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
             background: 'rgba(255, 255, 255, 0.08)',
             border: '1px solid rgba(255, 255, 255, 0.15)',
             color: '#e2e8f0',
-            padding: '8px 16px',
+            padding: '8px 18px',
             borderRadius: '20px',
             fontSize: '12px',
             fontWeight: 600,
@@ -518,70 +610,108 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
             gap: '6px',
             transition: 'all 0.2s ease'
           }}
-          title="Skip 3D Earth intro and go straight to map"
+          title="Skip 3D Earth intro and open charger map"
         >
           <EyeOff size={14} /> Skip Intro
         </button>
       </div>
 
-      {/* Center Zoom Stage Indicator (During flight) */}
-      {isZooming && (
+      {/* Minimal Restrained Hero Message (Upper Third, does NOT block Earth) */}
+      {!isZooming && (
         <div style={{
           position: 'relative',
           zIndex: 10,
+          maxWidth: '460px',
+          margin: '12px auto 0 0',
+          padding: '0 12px',
+          animation: 'fadeIn 0.5s ease',
+          pointerEvents: 'none'
+        }}>
+          <div style={{
+            fontSize: 'clamp(20px, 3.2vw, 28px)',
+            fontWeight: 800,
+            lineHeight: 1.18,
+            letterSpacing: '-0.5px',
+            color: '#f8fafc',
+            textShadow: '0 2px 10px rgba(0,0,0,0.6)'
+          }}>
+            From anywhere.<br />
+            <span style={{ color: '#34d399' }}>To your next charge.</span>
+          </div>
+          <div style={{
+            fontSize: '13px',
+            color: '#94a3b8',
+            marginTop: '6px',
+            fontWeight: 500,
+            textShadow: '0 1px 6px rgba(0,0,0,0.8)'
+          }}>
+            Discover India's smart EV charging network.
+          </div>
+        </div>
+      )}
+
+      {/* Zoom Flight Telemetry Indicator */}
+      {isZooming && (
+        <div style={{
+          position: 'relative',
+          zIndex: 15,
           margin: 'auto',
           textAlign: 'center',
           animation: 'fadeIn 0.3s ease'
         }}>
           <div style={{
-            background: 'rgba(11, 29, 58, 0.85)',
-            backdropFilter: 'blur(16px)',
-            border: '1px solid rgba(16, 185, 129, 0.4)',
-            padding: '16px 28px',
+            background: 'rgba(9, 26, 50, 0.92)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(16, 185, 129, 0.45)',
+            padding: '18px 32px',
             borderRadius: '24px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            boxShadow: '0 24px 60px rgba(0, 0, 0, 0.6)',
             display: 'inline-flex',
             flexDirection: 'column',
             alignItems: 'center',
             gap: '8px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: 700, fontSize: '14px' }}>
-              <Compass size={18} className="spin-animation" />
-              <span>
-                {zoomStage === 'region' && 'Aligning Continental Orbit...'}
-                {zoomStage === 'city' && `Approaching ${selectedHub?.name}...`}
-                {zoomStage === 'ready' && 'Loading Local Fast Chargers...'}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#10b981', fontWeight: 800, fontSize: '15px' }}>
+              <Compass size={20} className="spin-animation" />
+              <span>{loadingStatusText.primary}</span>
             </div>
             <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-              Descending into high-voltage charging corridor
+              {loadingStatusText.secondary}
             </div>
           </div>
         </div>
       )}
 
-      {/* Bottom Hub Selector & Geolocation Card */}
+      {/* Bottom Discovery Panel */}
       {!isZooming && (
         <div style={{
           position: 'relative',
           zIndex: 10,
           width: '100%',
-          maxWidth: '820px',
+          maxWidth: '860px',
           margin: '0 auto',
-          background: 'rgba(11, 29, 58, 0.88)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '24px',
-          padding: '20px 24px',
-          boxShadow: '0 24px 60px rgba(0, 0, 0, 0.6)'
+          background: 'rgba(9, 26, 50, 0.90)',
+          backdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '22px',
+          padding: '16px 20px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+          {/* Header Row */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '12px',
+            flexWrap: 'wrap',
+            gap: '10px'
+          }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#ffffff' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.2px' }}>
                 Discover Smart EV Charging Corridors
               </h2>
-              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-                Select a network region or detect your live GPS position to explore available chargers.
+              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                Select a network corridor or detect your live location to explore high-speed chargers.
               </div>
             </div>
 
@@ -589,71 +719,102 @@ export default function GlobeIntro({ onSelectLocation, onSkip }) {
               onClick={handleDetectGPS}
               disabled={isLocating}
               style={{
-                background: 'linear-gradient(135deg, #10b981, #059669)',
+                background: isLocating ? '#059669' : 'linear-gradient(135deg, #10b981, #059669)',
                 color: '#ffffff',
                 border: 'none',
-                padding: '10px 18px',
+                padding: '8px 16px',
                 borderRadius: '12px',
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 700,
-                cursor: 'pointer',
+                cursor: isLocating ? 'wait' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-                minHeight: '44px'
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                transition: 'all 0.2s ease',
+                flexShrink: 0
               }}
             >
-              <Navigation size={16} />
-              <span>{isLocating ? 'Detecting GPS...' : 'Use My Location'}</span>
+              <Navigation size={15} />
+              <span>{isLocating ? 'Detecting Location...' : 'Use My Location'}</span>
             </button>
           </div>
 
-          {/* Quick Hub Grid */}
+          {/* Location Access Error Alert (Clean & Informative) */}
+          {locationError && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              marginBottom: '10px',
+              fontSize: '12px',
+              color: '#fca5a5',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <AlertCircle size={15} color="#f87171" />
+              <span>{locationError}</span>
+            </div>
+          )}
+
+          {/* City Corridor Grid Cards */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '10px'
+            gap: '8px',
+            overflowX: 'auto'
           }}>
-            {QUICK_HUBS.map((hub) => (
-              <button
-                key={hub.name}
-                onClick={() => handleStartZoom(hub)}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '14px',
-                  padding: '10px 14px',
-                  color: '#ffffff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                  minHeight: '52px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#10b981';
-                  e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                }}
-              >
-                <div style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>{hub.name.split(' ')[0]}</span>
-                  <ArrowRight size={13} color="#10b981" />
-                </div>
-                <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                  {hub.name.includes('Hub') ? 'Primary Grid' : 'Fast Corridor'}
-                </div>
-              </button>
-            ))}
+            {QUICK_HUBS.map((hub) => {
+              const isSelected = selectedHub?.id === hub.id;
+              return (
+                <button
+                  key={hub.id}
+                  onClick={() => handleStartZoom(hub)}
+                  style={{
+                    background: isSelected ? 'rgba(16, 185, 129, 0.16)' : 'rgba(255, 255, 255, 0.04)',
+                    border: isSelected ? '1.5px solid #10b981' : '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '12px',
+                    padding: '8px 12px',
+                    color: '#ffffff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    gap: '2px',
+                    minHeight: '48px',
+                    boxShadow: isSelected ? '0 0 16px rgba(16, 185, 129, 0.25)' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.6)';
+                      e.currentTarget.style.background = 'rgba(16, 185, 129, 0.08)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                    }
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ color: isSelected ? '#34d399' : '#f8fafc' }}>{hub.name}</span>
+                    <ArrowRight size={13} color={isSelected ? '#34d399' : '#94a3b8'} />
+                  </div>
+                  <div style={{ fontSize: '10px', color: isSelected ? '#a7f3d0' : '#94a3b8' }}>
+                    {hub.tag}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
     </div>
   );
 }
+

@@ -44,6 +44,15 @@ async function run() {
   const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ev_charging';
   await mongoose.connect(mongoUri);
 
+  let localServer = null;
+  try {
+    await fetch('http://localhost:5000/health', { signal: AbortSignal.timeout(800) });
+  } catch (e) {
+    const app = require('../server');
+    localServer = app.listen(5000);
+    await new Promise((r) => setTimeout(r, 600));
+  }
+
   // 1. Database Health Check
   const rootHealthRes = await fetch('http://localhost:5000/health').then(r => r.json());
   assert('System /health endpoint is operational', rootHealthRes.status === 'ok');

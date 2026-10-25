@@ -18,12 +18,12 @@ const GlobeIntro = React.lazy(() => import('./components/GlobeIntro'));
 const App = () => {
   const [activeTab, setActiveTab] = useState('search'); // search -> bookings -> dashboard
   
-  // 3D Globe Experience State
+  // 3D Globe Experience State (Session-aware: faster entry for returning visits in session, manually reopenable)
   const [showGlobe, setShowGlobe] = useState(() => {
     try {
-      return !localStorage.getItem('voltsync_skip_globe');
+      return !sessionStorage.getItem('voltsync_skip_globe');
     } catch (e) {
-      return false;
+      return true;
     }
   });
 
@@ -351,7 +351,7 @@ const App = () => {
   const handleGlobeSelectLocation = (lat, lng, name) => {
     setShowGlobe(false);
     try {
-      localStorage.setItem('voltsync_skip_globe', 'true');
+      sessionStorage.setItem('voltsync_skip_globe', 'true');
     } catch (e) {}
     setUserLat(lat.toString());
     setUserLng(lng.toString());
@@ -366,7 +366,7 @@ const App = () => {
   const handleGlobeSkip = () => {
     setShowGlobe(false);
     try {
-      localStorage.setItem('voltsync_skip_globe', 'true');
+      sessionStorage.setItem('voltsync_skip_globe', 'true');
     } catch (e) {}
   };
 

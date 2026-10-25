@@ -8,58 +8,76 @@ const Station = require('../models/Station');
 const authMiddleware = require('../middleware/auth');
 const { JWT_SECRET } = require('../config/jwt');
 
-// Check if valid Razorpay API credentials are configured in environment
+// Determine payment mode: Default to 'razorpay'
+const paymentMode = process.env.PAYMENT_MODE || (process.env.RAZORPAY_KEY_ID ? 'razorpay' : 'razorpay');
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID || '';
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
+
+// Validate configured Razorpay API credentials
 const isRazorpayConfigured = Boolean(
-  process.env.RAZORPAY_KEY_ID && 
-  process.env.RAZORPAY_KEY_SECRET &&
-  !process.env.RAZORPAY_KEY_ID.includes('placeholder') &&
-  process.env.RAZORPAY_KEY_ID.startsWith('rzp_')
+  razorpayKeyId && 
+  razorpayKeySecret &&
+  !razorpayKeyId.includes('placeholder') &&
+  razorpayKeyId.startsWith('rzp_')
 );
 
-// Controlled development mock mode (explicitly permitted only in development)
-const isDevMockAllowed = process.env.NODE_ENV !== 'production';
+// Offline mock mode is ONLY allowed if explicitly set to 'mock' and not in production
+const isMockMode = paymentMode === 'mock' && process.env.NODE_ENV !== 'production';
 
 let razorpayInstance = null;
 if (isRazorpayConfigured) {
   try {
     razorpayInstance = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET
+      key_id: razorpayKeyId,
+      key_secret: razorpayKeySecret
     });
-    console.log('Razorpay Gateway initialized with Key ID:', process.env.RAZORPAY_KEY_ID);
+    console.log('Razorpay Gateway initialized with Key ID:', razorpayKeyId);
   } catch (err) {
     console.error('Error initializing Razorpay client:', err.message);
   }
-} else if (isDevMockAllowed) {
-  console.log('Razorpay keys not configured. Running VoltSync Controlled Development Mock Mode.');
+} else if (isMockMode) {
+  console.log('Running in explicit offline mock mode (PAYMENT_MODE=mock).');
 } else {
-  console.warn('WARNING: Running in production without configured Razorpay keys. Real payments required.');
+  console.warn('Razorpay mode active. Live/Test credentials pending in environment variables.');
 }
 
-// 1. GET /api/payments/config - Get payment gateway capabilities
+// 1. GET /api/payments/config - Get payment gateway capabilities (no secrets exposed)
 router.get('/config', (req, res) => {
-  const isMock = !isRazorpayConfigured && isDevMockAllowed;
+  if (isMockMode) {
+    return res.json({
+      success: true,
+      mode: 'mock',
+      configured: true,
+      keyId: 'rzp_test_voltsync_mock',
+      currency: 'INR',
+      supportedMethods: [
+        { id: 'upi', name: 'Instant UPI / QR Code', description: 'GPay, PhonePe, Paytm, BHIM UPI' },
+        { id: 'card', name: 'Credit & Debit Cards', description: 'Visa, Mastercard, RuPay' },
+        { id: 'netbanking', name: 'Net Banking', description: 'All Major Indian Banks' },
+        { id: 'wallet', name: 'Wallets', description: 'Mobikwik, Freecharge, Airtel Money' }
+      ]
+    });
+  }
+
   res.json({
     success: true,
-    status: 'ok',
-    gateway: isRazorpayConfigured ? 'razorpay' : (isMock ? 'mock' : 'disabled'),
-    isRazorpayConfigured,
-    isMockMode: isMock,
-    keyId: isRazorpayConfigured ? process.env.RAZORPAY_KEY_ID : (isMock ? 'rzp_test_voltsync_mock' : null),
+    mode: 'razorpay',
+    configured: isRazorpayConfigured,
+    keyId: isRazorpayConfigured ? razorpayKeyId : null,
     currency: 'INR',
     supportedMethods: [
       { id: 'upi', name: 'Instant UPI / QR Code', description: 'GPay, PhonePe, Paytm, BHIM UPI' },
       { id: 'card', name: 'Credit & Debit Cards', description: 'Visa, Mastercard, RuPay' },
       { id: 'netbanking', name: 'Net Banking', description: 'All Major Indian Banks' },
-      { id: 'wallet', name: 'VoltSync FastPass Wallet', description: '1-Click EV Balance' }
+      { id: 'wallet', name: 'Wallets', description: 'Mobikwik, Freecharge, Airtel Money' }
     ]
   });
 });
 
-// 2. POST /api/payments/create-order - Create Server Payment Order tied to authenticated booking
+// 2. POST /api/payments/create-order - Create server-authoritative Razorpay order tied to authenticated booking
 router.post('/create-order', authMiddleware, async (req, res) => {
   try {
-    const { bookingId, energyKwh = 15, paymentMethod = 'upi' } = req.body;
+    const { bookingId, energyKwh } = req.body;
 
     if (!bookingId) {
       return res.status(400).json({ success: false, error: 'bookingId is required.' });
@@ -96,24 +114,29 @@ router.post('/create-order', authMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Station details not found.' });
     }
 
-    // Server financial breakdown (18% GST standard)
+    // Server-side authoritative calculation (18% GST standard)
     const validEnergy = Math.max(1, Number(energyKwh) || booking.energyKwh || 15);
     const baseEnergyCost = Math.round(validEnergy * station.pricingPerKwh);
     const gstAmount = Math.round(baseEnergyCost * 0.18);
     const totalAmount = baseEnergyCost + gstAmount;
     const amountInPaise = totalAmount * 100;
 
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-
     let orderId;
-    let gatewayType = 'mock';
+    let gatewayType = 'razorpay';
 
-    if (isRazorpayConfigured && razorpayInstance) {
+    if (paymentMode === 'razorpay') {
+      if (!isRazorpayConfigured || !razorpayInstance) {
+        return res.status(503).json({
+          success: false,
+          error: 'Payment service is temporarily unavailable. Please try again later.'
+        });
+      }
+
       try {
         const rzpOrder = await razorpayInstance.orders.create({
           amount: amountInPaise,
           currency: 'INR',
-          receipt: `rcpt_${booking._id.toString().substring(0, 14)}`,
+          receipt: `rcpt_${booking._id.toString().slice(-14)}`,
           notes: {
             bookingId: booking._id.toString(),
             stationName: station.name,
@@ -125,26 +148,25 @@ router.post('/create-order', authMiddleware, async (req, res) => {
         orderId = rzpOrder.id;
         gatewayType = 'razorpay';
       } catch (rzpErr) {
-        console.error('Razorpay API error on order creation:', rzpErr);
+        console.error('Razorpay API error on order creation:', rzpErr.message);
         return res.status(502).json({
           success: false,
           error: `Razorpay payment order initialization failed: ${rzpErr.message}`
         });
       }
-    } else if (isDevMockAllowed) {
-      // Development mock mode: Server-signed order ID
-      const orderSeed = `order_vs_mock_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-      orderId = orderSeed;
+    } else if (isMockMode) {
+      orderId = `order_vs_mock_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       gatewayType = 'mock';
     } else {
       return res.status(503).json({
         success: false,
-        error: 'Production payment gateway is not configured. Please configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.'
+        error: 'Payment service is temporarily unavailable. Please try again later.'
       });
     }
 
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
     booking.paymentOrderId = orderId;
-    booking.paymentMethod = paymentMethod;
     booking.paymentGateway = gatewayType;
     booking.invoiceNumber = invoiceNumber;
     booking.energyKwh = validEnergy;
@@ -166,8 +188,8 @@ router.post('/create-order', authMiddleware, async (req, res) => {
       amount: totalAmount,
       amountInPaise,
       currency: 'INR',
-      keyId: isRazorpayConfigured ? process.env.RAZORPAY_KEY_ID : 'rzp_test_voltsync_mock',
-      gateway: gatewayType,
+      keyId: isRazorpayConfigured ? razorpayKeyId : (isMockMode ? 'rzp_test_voltsync_mock' : null),
+      bookingId: booking._id,
       invoiceNumber,
       taxBreakdown: booking.taxBreakdown,
       station: {
@@ -191,19 +213,29 @@ router.post('/create-order', authMiddleware, async (req, res) => {
   }
 });
 
-// 3. POST /api/payments/verify - Verify payment and confirm booking with cryptographic signature verification
+// 3. POST /api/payments/verify - Cryptographically verify payment and confirm booking
 router.post('/verify', authMiddleware, async (req, res) => {
   try {
     const { 
       bookingId, 
-      orderId, 
-      paymentId, 
-      signature, 
-      paymentMethod = 'upi' 
+      orderId: bodyOrderId, 
+      paymentId: bodyPaymentId, 
+      signature: bodySignature,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      paymentMethod = 'razorpay' 
     } = req.body;
 
+    const orderId = bodyOrderId || razorpay_order_id;
+    const paymentId = bodyPaymentId || razorpay_payment_id;
+    const signature = bodySignature || razorpay_signature;
+
     if (!bookingId || !orderId || !paymentId) {
-      return res.status(400).json({ success: false, error: 'bookingId, orderId, and paymentId are required.' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'bookingId, orderId, and paymentId are required.' 
+      });
     }
 
     if (!mongoose.Types.ObjectId.isValid(bookingId)) {
@@ -219,6 +251,37 @@ router.post('/verify', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Unauthorized: Booking does not belong to you.' });
     }
 
+    // Idempotency: If booking was already confirmed with this same payment
+    if (booking.status === 'confirmed' && booking.paymentIntentId === paymentId && booking.paymentOrderId === orderId) {
+      const station = await Station.findById(booking.stationId);
+      return res.json({
+        success: true,
+        message: 'Payment verified and reservation confirmed!',
+        booking,
+        receipt: {
+          invoiceNumber: booking.invoiceNumber,
+          bookingReference: booking.bookingReference,
+          checkInCode: booking.checkInCode,
+          transactionId: paymentId,
+          orderId,
+          paymentGateway: booking.paymentGateway,
+          paymentMethod: booking.paymentMethod || paymentMethod,
+          stationName: station ? station.name : 'VoltSync Hub',
+          chargerId: booking.chargerId,
+          slotTime: booking.slotTime,
+          taxBreakdown: booking.taxBreakdown,
+          totalPaid: booking.amountPaid,
+          timestamp: booking.updatedAt || new Date().toISOString()
+        }
+      });
+    }
+
+    // Check if cancelled
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: 'Booking reservation has been cancelled.' });
+    }
+
+    // Verify order ID matches booking order ID
     if (booking.paymentOrderId && booking.paymentOrderId !== orderId) {
       return res.status(400).json({ success: false, error: 'Payment Order ID mismatch with booked order.' });
     }
@@ -234,14 +297,17 @@ router.post('/verify', authMiddleware, async (req, res) => {
 
     let verifiedSignature = null;
 
-    // Razorpay signature validation if in real Razorpay mode
-    if (isRazorpayConfigured && booking.paymentGateway === 'razorpay') {
+    if (booking.paymentGateway === 'razorpay' || paymentMode === 'razorpay') {
       if (!signature) {
         return res.status(400).json({ success: false, error: 'Razorpay payment signature is required.' });
       }
 
+      if (!razorpayKeySecret) {
+        return res.status(503).json({ success: false, error: 'Payment verification secret is not configured.' });
+      }
+
       const generatedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .createHmac('sha256', razorpayKeySecret)
         .update(`${orderId}|${paymentId}`)
         .digest('hex');
 
@@ -252,24 +318,9 @@ router.post('/verify', authMiddleware, async (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid payment signature. Verification failed.' });
       }
 
-      // Check payment status with Razorpay
-      try {
-        const paymentDetails = await razorpayInstance.payments.fetch(paymentId);
-        if (paymentDetails.status !== 'captured' && paymentDetails.status !== 'authorized') {
-          return res.status(400).json({
-            success: false,
-            error: `Payment is in invalid status: ${paymentDetails.status}. Verification not confirmed.`
-          });
-        }
-      } catch (fetchErr) {
-        console.error('Failed to query Razorpay payment status:', fetchErr);
-        return res.status(502).json({ success: false, error: 'Could not verify payment capture status with Razorpay.' });
-      }
-
       verifiedSignature = signature;
-    } else if (isDevMockAllowed && (booking.paymentGateway === 'mock' || booking.paymentGateway === 'sandbox')) {
-      // Controlled Development Mock Mode
-      verifiedSignature = signature || `sig_mock_verified_${crypto.createHmac('sha256', JWT_SECRET).update(`${orderId}|${paymentId}`).digest('hex').substring(0, 24)}`;
+    } else if (isMockMode && booking.paymentGateway === 'mock') {
+      verifiedSignature = signature || `sig_mock_verified_${crypto.randomBytes(8).toString('hex')}`;
     } else {
       return res.status(400).json({
         success: false,
@@ -283,7 +334,7 @@ router.post('/verify', authMiddleware, async (req, res) => {
     booking.paymentIntentId = paymentId;
     booking.paymentOrderId = orderId;
     booking.paymentSignature = verifiedSignature;
-    booking.paymentMethod = paymentMethod;
+    booking.paymentMethod = ['upi', 'card', 'netbanking', 'wallet', 'razorpay'].includes(paymentMethod) ? paymentMethod : 'upi';
     booking.amountPaid = booking.amountDue;
     booking.lockedUntil = undefined;
     await booking.save();
@@ -317,7 +368,7 @@ router.post('/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// 4. POST /api/payments/webhook - Raw body Razorpay Webhook listener
+// 4. POST /api/payments/webhook - Raw body Razorpay Webhook listener with signature check
 router.post('/webhook', async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -410,3 +461,4 @@ router.get('/receipt/:bookingId', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
