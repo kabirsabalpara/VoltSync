@@ -65,7 +65,10 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
     }
   };
 
+  const isDemoLoginEnabled = import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true';
+
   const handleQuickDemoLogin = (demoRole) => {
+    if (!isDemoLoginEnabled) return;
     if (demoRole === 'driver') {
       setEmail('driver@example.com');
       setPassword('DriverPass123!');
@@ -240,28 +243,30 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
           </button>
         </form>
 
-        {/* Quick Demo Shortcuts */}
-        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed var(--glass-border)', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-            Demo Quick Login Shortcuts:
+        {/* Quick Demo Shortcuts - Rendered only when explicit local development flag VITE_ENABLE_DEMO_LOGIN=true is active */}
+        {isDemoLoginEnabled && (
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed var(--glass-border)', textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Demo Quick Login Shortcuts:
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => handleQuickDemoLogin('driver')}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <Zap size={14} /> Fill Driver Demo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickDemoLogin('operator')}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <BarChart3 size={14} /> Fill Operator Demo
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin('driver')}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-            >
-              <Zap size={14} /> Fill Driver Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemoLogin('operator')}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', padding: '6px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-            >
-              <BarChart3 size={14} /> Fill Operator Demo
-            </button>
-          </div>
-        </div>
+        )}
 
       </div>
     </div>
