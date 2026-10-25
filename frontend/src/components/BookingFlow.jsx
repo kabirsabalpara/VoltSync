@@ -41,6 +41,7 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
   const [selectedSlot, setSelectedSlot] = useState(initialSlots[0] || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [bookingId, setBookingId] = useState(null);
   const [chargerId, setChargerId] = useState(null);
   const [lockedUntil, setLockedUntil] = useState(null);
   const [confirmedBookingData, setConfirmedBookingData] = useState(null);
