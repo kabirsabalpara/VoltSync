@@ -67,15 +67,27 @@ const BookingSchema = new mongoose.Schema({
     enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'],
     default: 'unpaid'
   },
+  // Payment gateway provider: 'mock' for self-contained demo transactions, 'razorpay' if live gateway is active
   paymentGateway: {
     type: String,
-    enum: ['razorpay', 'sandbox', 'mock', 'wallet'],
-    default: 'sandbox'
+    enum: ['mock', 'razorpay', 'sandbox', 'wallet'],
+    default: 'mock'
   },
+  // Payment instrument / method type: 'mock'/'demo' for demo mode, or 'upi', 'card', 'netbanking', 'wallet'
   paymentMethod: {
     type: String,
-    enum: ['upi', 'card', 'netbanking', 'wallet', 'razorpay'],
-    default: 'upi'
+    enum: ['mock', 'demo', 'upi', 'card', 'netbanking', 'wallet', 'razorpay'],
+    default: 'mock'
+  },
+  mockPaymentId: {
+    type: String
+  },
+  paidAmount: {
+    type: Number,
+    default: 0
+  },
+  paidAt: {
+    type: Date
   },
   paymentOrderId: {
     type: String,

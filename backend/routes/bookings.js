@@ -339,38 +339,17 @@ router.post('/confirm', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Reservation lock has expired. Please reserve again.' });
     }
 
-    const isDevMock = process.env.NODE_ENV !== 'production' && (process.env.PAYMENT_MODE === 'mock' || !process.env.RAZORPAY_KEY_ID);
-    // Direct confirmation without verified payment is strictly forbidden in production (Requirement 5)
-    if (!isDevMock && booking.paymentStatus !== 'paid' && !booking.paymentSignature) {
-      return res.status(400).json({
-        success: false,
-        error: 'Payment verification is required before confirming a booking. Please complete verified checkout.'
-      });
-    }
-
+    // If already confirmed, return idempotently
     if (booking.status === 'confirmed' || booking.status === 'active') {
       return res.json({ success: true, message: 'Booking is already confirmed.', booking });
     }
 
-    const station = await Station.findById(booking.stationId);
-    const validEnergy = Math.max(1, Number(energyKwh || booking.energyKwh || 15));
-    const baseAmount = Math.round(validEnergy * (station ? station.pricingPerKwh : 15));
-    const gstAmount = Math.round(baseAmount * 0.18);
-    const totalAmount = baseAmount + gstAmount;
-
-    booking.status = 'confirmed';
-    booking.paymentStatus = 'paid';
-    if (paymentIntentId) booking.paymentIntentId = paymentIntentId;
-    booking.amountPaid = baseAmount;
-    booking.amountDue = baseAmount;
-    booking.amountInPaise = totalAmount * 100;
-    booking.taxBreakdown = {
-      baseAmount,
-      gstAmount,
-      totalAmount
-    };
-    booking.lockedUntil = undefined;
-    await booking.save();
+    // Direct confirmation through /bookings/confirm is strictly rejected.
+    // In demo mode, all confirmations MUST be performed through POST /api/payments/demo-pay.
+    return res.status(400).json({
+      success: false,
+      error: 'Direct booking confirmation is disabled. All confirmations must be completed via POST /api/payments/demo-pay.'
+    });
 
     res.json({ success: true, message: 'Booking confirmed successfully.', booking });
   } catch (error) {

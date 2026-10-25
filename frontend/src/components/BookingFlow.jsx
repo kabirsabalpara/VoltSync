@@ -171,45 +171,6 @@ const BookingFlow = ({ station, userEmail, onClose, onBookingSuccess }) => {
     }
   };
 
-  // 2. Confirm Payment Step
-  const handlePayment = async () => {
-    if (!bookingId) return;
-    setLoading(true);
-    setError(null);
-
-    const token = localStorage.getItem('voltsync_token');
-    try {
-      const response = await fetch(`${API_BASE_URL}/bookings/confirm`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          bookingId,
-          paymentIntentId: `pi_${paymentMethod}_${Math.random().toString(36).substr(2, 9)}`,
-          energyKwh: energyKwhNeeded > 0 ? energyKwhNeeded : 10
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        setStep('success');
-        if (onBookingSuccess) {
-          onBookingSuccess(data.booking);
-        }
-      } else {
-        setError(data.error || 'Payment confirmation failed.');
-      }
-    } catch (err) {
-      setError('Failed to contact server for payment confirmation.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Release lock if closed manually during payment
   const handleClose = async () => {
     if (step === 'payment' && bookingId) {

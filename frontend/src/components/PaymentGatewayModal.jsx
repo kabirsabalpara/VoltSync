@@ -2,33 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, 
   ShieldCheck, 
-  Lock, 
-  CreditCard, 
-  Smartphone, 
-  Building2, 
-  Wallet,
   CheckCircle, 
   AlertTriangle, 
   Clock, 
-  ArrowRight, 
   Printer, 
   Zap,
-  ExternalLink,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import QRCodeView from './QRCodeView';
-
-const loadRazorpayScript = () => {
-  return new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true);
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-};
 
 const PaymentGatewayModal = ({
   station,
@@ -41,12 +25,10 @@ const PaymentGatewayModal = ({
   onClose,
   onPaymentSuccess
 }) => {
-  const [gatewayConfig, setGatewayConfig] = useState(null);
   const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [error, setError] = useState(null);
-  const [paymentCancelled, setPaymentCancelled] = useState(false);
   const [paymentReceipt, setPaymentReceipt] = useState(null);
 
   // Derive countdown from server lock expiry
@@ -68,7 +50,7 @@ const PaymentGatewayModal = ({
     return () => clearInterval(interval);
   }, [lockedUntil]);
 
-  // Fetch gateway configuration and create server order on mount
+  // Create server order and fetch pricing breakdown on mount
   useEffect(() => {
     initiateOrderFlow();
   }, [bookingId]);
@@ -76,16 +58,13 @@ const PaymentGatewayModal = ({
   const initiateOrderFlow = async () => {
     setLoading(true);
     setError(null);
-    setPaymentCancelled(false);
     try {
       const token = localStorage.getItem('voltsync_token');
 
       // 1. Fetch Gateway Config
       const configRes = await fetch(`${API_BASE_URL}/payments/config`);
       const configJson = await configRes.json();
-      setGatewayConfig(configJson);
 
-      // Check if gateway is available
       if (configJson.configured === false) {
         setError('Payment service is temporarily unavailable. Please try again later.');
         setLoading(false);
@@ -107,102 +86,57 @@ const PaymentGatewayModal = ({
 
       const orderJson = await orderRes.json();
       if (!orderRes.ok) {
-        throw new Error(orderJson.error || 'Payment service is temporarily unavailable. Please try again later.');
+        throw new Error(orderJson.error || 'Payment could not be completed. Please try again.');
       }
 
       setOrderData(orderJson);
     } catch (err) {
       console.error('Order initialization error:', err);
-      setError(err.message || 'Payment service is temporarily unavailable. Please try again later.');
+      setError(err.message || 'Payment could not be completed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Launch Razorpay Standard Checkout
-  const handleLaunchPayment = async () => {
-    if (!orderData || processingPayment) return;
+  // Complete Demo Payment with server-authoritative confirmation
+  const handleCompleteDemoPayment = async () => {
+    if (processingPayment || secondsRemaining <= 0) return;
     setProcessingPayment(true);
     setError(null);
-    setPaymentCancelled(false);
-
-    const scriptLoaded = await loadRazorpayScript();
-    if (!scriptLoaded) {
-      setProcessingPayment(false);
-      setError('Unable to load secure payment SDK. Please check your internet connection.');
-      return;
-    }
 
     try {
       const token = localStorage.getItem('voltsync_token');
-      const keyId = orderData.keyId || gatewayConfig?.keyId;
 
-      if (!keyId) {
-        setProcessingPayment(false);
-        setError('Payment service is temporarily unavailable. Please try again later.');
-        return;
-      }
+      const response = await fetch(`${API_BASE_URL}/payments/demo-pay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          bookingId
+        })
+      });
 
-      const options = {
-        key: keyId,
-        amount: orderData.amountInPaise,
-        currency: orderData.currency || 'INR',
-        name: 'VoltSync EV Network',
-        description: `EV Charging: ${station?.name || 'VoltSync Hub'} (${chargerId})`,
-        order_id: orderData.orderId,
-        prefill: {
-          email: userEmail || ''
-        },
-        theme: {
-          color: '#10b981' // VoltSync Emerald Accent
-        },
-        handler: async function (response) {
-          try {
-            // Cryptographic server-side verification
-            const verifyRes = await fetch(`${API_BASE_URL}/payments/verify`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {})
-              },
-              body: JSON.stringify({
-                bookingId,
-                orderId: response.razorpay_order_id,
-                paymentId: response.razorpay_payment_id,
-                signature: response.razorpay_signature,
-                paymentMethod: 'razorpay'
-              })
-            });
+      const data = await response.json();
 
-            const verifyData = await verifyRes.json();
-            if (verifyRes.ok && verifyData.success) {
-              setPaymentReceipt(verifyData.receipt);
-              if (onPaymentSuccess) {
-                onPaymentSuccess(verifyData.booking);
-              }
-            } else {
-              setError(verifyData.error || 'Payment verification failed. Your booking was not confirmed.');
-            }
-          } catch (verErr) {
-            setError('Payment verification failed. Your booking was not confirmed.');
-          } finally {
-            setProcessingPayment(false);
-          }
-        },
-        modal: {
-          ondismiss: function () {
-            setProcessingPayment(false);
-            setPaymentCancelled(true);
-          }
+      if (response.ok && data.success) {
+        setPaymentReceipt(data.receipt);
+        if (onPaymentSuccess) {
+          onPaymentSuccess(data.booking);
         }
-      };
-
-      const rzpInstance = new window.Razorpay(options);
-      rzpInstance.open();
+      } else {
+        if (data.error && data.error.toLowerCase().includes('expired')) {
+          setError('Your reservation hold has expired.');
+        } else {
+          setError(data.error || 'Payment could not be completed. Please try again.');
+        }
+      }
     } catch (err) {
-      console.error('Razorpay invocation error:', err);
+      console.error('Demo payment error:', err);
+      setError('Payment could not be completed. Please try again.');
+    } finally {
       setProcessingPayment(false);
-      setError('Payment service error: ' + err.message);
     }
   };
 
@@ -237,7 +171,7 @@ const PaymentGatewayModal = ({
               Charging Slot Confirmed
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Payment verified securely. Your charging slot reservation is confirmed.
+              Payment completed successfully. Your charging slot reservation is confirmed.
             </p>
           </div>
 
@@ -269,30 +203,34 @@ const PaymentGatewayModal = ({
                   <b style={{ color: 'var(--accent-teal)', fontSize: '13px' }}>{paymentReceipt.chargerId} (Fast DC)</b>
                 </div>
                 <div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Date / Time Slot</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Date & Time</span>
                   <b style={{ color: '#047857', fontSize: '12px' }}>{formatSlotTime(paymentReceipt.slotTime)}</b>
                 </div>
                 <div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Transaction ID</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Booking ID</span>
                   <b style={{ color: 'var(--text-primary)', wordBreak: 'break-all', fontSize: '11px' }}>
-                    {paymentReceipt.transactionId}
+                    {paymentReceipt.bookingReference || paymentReceipt.orderId}
                   </b>
                 </div>
               </div>
 
-              {/* Energy & Tax Breakdown */}
+              {/* Energy & Amount Summary */}
               <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate ({energyKwh} kWh):</span>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>₹{paymentReceipt.taxBreakdown?.baseAmount || 0}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate:</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{paymentReceipt.energyKwh || energyKwh} kWh</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Rate:</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>₹{paymentReceipt.unitPricePerKwh || station?.pricingPerKwh || 14}/kWh</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>GST (18%):</span>
                   <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>₹{paymentReceipt.taxBreakdown?.gstAmount || 0}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid #cbd5e1', fontWeight: 800 }}>
-                  <span style={{ color: 'var(--text-primary)' }}>Total Amount Paid:</span>
-                  <span style={{ color: '#047857', fontSize: '15px' }}>₹{paymentReceipt.totalPaid} INR</span>
+                  <span style={{ color: 'var(--text-primary)' }}>Amount Paid:</span>
+                  <span style={{ color: '#047857', fontSize: '15px' }}>₹{paymentReceipt.totalPaid || paymentReceipt.paidAmount || 0} INR</span>
                 </div>
               </div>
 
@@ -303,10 +241,10 @@ const PaymentGatewayModal = ({
                 </div>
                 <div>
                   <div style={{ fontSize: '11px', fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                    Digital Check-in Pass: {paymentReceipt.checkInCode || 'VP-ACTIVE'}
+                    Digital Pass / QR: {paymentReceipt.checkInCode || 'VP-ACTIVE'}
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
-                    Present this scannable QR pass to the station operator or scanner upon arrival for verified session access.
+                    Present this verifiable QR pass to the station operator upon arrival for instant slot access.
                   </div>
                 </div>
               </div>
@@ -334,10 +272,12 @@ const PaymentGatewayModal = ({
     );
   }
 
-  // CHECKOUT STATE: Clean Professional Label/Value Rows & Razorpay Trigger
-  const totalAmount = orderData?.amount || Math.round((Number(energyKwh) * (station?.pricingPerKwh || 15)) * 1.18);
-  const baseCost = orderData?.taxBreakdown?.baseAmount || Math.round(Number(energyKwh) * (station?.pricingPerKwh || 15));
+  // CHECKOUT STATE: Clean Professional Label/Value Rows
+  const pricingRate = station?.pricingPerKwh || 14;
+  const energyVal = Number(energyKwh) || 15;
+  const baseCost = orderData?.taxBreakdown?.baseAmount || Math.round(energyVal * pricingRate);
   const gstCost = orderData?.taxBreakdown?.gstAmount || Math.round(baseCost * 0.18);
+  const totalAmount = orderData?.amount || (baseCost + gstCost);
   const isHoldExpired = secondsRemaining <= 0;
 
   return (
@@ -351,10 +291,10 @@ const PaymentGatewayModal = ({
         <div className="modal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: 'var(--text-primary)' }}>
-              Verified Payment Checkout
+              VoltSync Payment Checkout
             </h2>
-            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Secure Reservation Lock & FastPass Confirmation
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#059669', fontWeight: 600 }}>
+              Demo Payment Mode
             </p>
           </div>
           <div className="timer-container" style={{ margin: 0, padding: '4px 10px', fontSize: '12px', background: isHoldExpired ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: isHoldExpired ? '#dc2626' : '#047857' }}>
@@ -371,22 +311,21 @@ const PaymentGatewayModal = ({
             </div>
           )}
 
-          {paymentCancelled && !isHoldExpired && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertTriangle size={16} color="#d97706" />
-              <span>Payment was not completed. Your slot hold is still active.</span>
-            </div>
-          )}
+          {/* Demonstration Notice */}
+          <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#065f46', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Info size={16} color="#059669" style={{ flexShrink: 0 }} />
+            <span>This checkout is running in demonstration mode. No real money will be charged.</span>
+          </div>
 
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '36px 20px', gap: '12px' }}>
               <div style={{ border: '3px solid #e2e8f0', borderTop: '3px solid #10b981', borderRadius: '50%', width: '36px', height: '36px', animation: 'spin 1s linear infinite' }}></div>
-              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Preparing secure checkout order...</span>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Preparing demo checkout order...</span>
             </div>
           ) : (
             <div>
-              {/* Order Details Card: Clean Label / Value Rows */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+              {/* Clean Booking Summary Rows */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Station</span>
@@ -403,7 +342,7 @@ const PaymentGatewayModal = ({
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Slot</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Charging Slot</span>
                     <b style={{ fontSize: '12px', color: '#047857' }}>
                       {formatSlotTime(slotTime)}
                     </b>
@@ -412,7 +351,14 @@ const PaymentGatewayModal = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Energy Estimate</span>
                     <b style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
-                      {energyKwh} kWh × ₹{station?.pricingPerKwh || 15}/kWh
+                      {energyVal} kWh
+                    </b>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Charging Rate</span>
+                    <b style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      ₹{pricingRate}/kWh
                     </b>
                   </div>
 
@@ -432,37 +378,20 @@ const PaymentGatewayModal = ({
                 </div>
               </div>
 
-              {/* Supported Payment Methods Informational Chips */}
-              <div style={{ marginBottom: '14px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                  SUPPORTED PAYMENT OPTIONS
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Smartphone size={12} color="#059669" /> UPI
-                  </span>
-                  <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CreditCard size={12} color="#0284c7" /> Cards
-                  </span>
-                  <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Building2 size={12} color="#7c3aed" /> Netbanking
-                  </span>
-                  <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Wallet size={12} color="#d97706" /> Wallets
-                  </span>
-                </div>
-              </div>
-
-              {/* Security Statement */}
-              <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', padding: '10px 12px', fontSize: '11px', color: '#065f46', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldCheck size={16} color="#059669" style={{ flexShrink: 0 }} />
-                <span>UPI, Cards, Netbanking and other supported methods are processed securely through Razorpay.</span>
+              {/* Informational Chips: Demo Transaction / No Real Charge */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <Sparkles size={12} color="#059669" /> Demo Transaction
+                </span>
+                <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, color: '#334155', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <ShieldCheck size={12} color="#0284c7" /> No real charge
+                </span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Modal Footer: Sticky/Always Visible Primary CTA */}
+        {/* Modal Footer: Double Click Protection & Sticky CTA */}
         <div className="modal-footer">
           {isHoldExpired ? (
             <button
@@ -474,23 +403,21 @@ const PaymentGatewayModal = ({
             </button>
           ) : (
             <button
-              onClick={handleLaunchPayment}
-              disabled={loading || processingPayment || !orderData || gatewayConfig?.configured === false}
+              onClick={handleCompleteDemoPayment}
+              disabled={loading || processingPayment || isHoldExpired}
               className="action-btn"
-              style={{ width: '100%', height: '46px', fontSize: '14px', gap: '8px' }}
+              style={{ width: '100%', height: '46px', fontSize: '14px', gap: '8px', opacity: (loading || processingPayment || isHoldExpired) ? 0.7 : 1 }}
             >
               {processingPayment ? (
-                <>Opening secure payment...</>
-              ) : paymentCancelled ? (
-                <><RotateCcw size={16} /> Retry Payment (₹{totalAmount})</>
+                <>Processing demo payment...</>
               ) : (
-                <><Lock size={15} /> Pay ₹{totalAmount} Securely <ArrowRight size={16} /></>
+                <>Complete Demo Payment • ₹{totalAmount}</>
               )}
             </button>
           )}
 
           <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-            🔒 256-bit TLS encrypted transaction • Official VoltSync Reservation Protocol
+            🔒 Verified Demo Protocol • Instant Pass Generation
           </div>
         </div>
       </div>
@@ -499,4 +426,3 @@ const PaymentGatewayModal = ({
 };
 
 export default PaymentGatewayModal;
-

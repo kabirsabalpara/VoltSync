@@ -244,19 +244,28 @@ async function main() {
         `status=${releaseAsDriver2.status}`
       );
 
-      // driver1 confirms with a lowball client-supplied amountPaid to see if server ignores it
-      const energyKwh = 10;
-      const manipulatedAmount = 1; // attacker tries to pay ₹1
-      const confirmAsOwner = await call('/bookings/confirm', {
+      // driver1 tries direct /bookings/confirm bypass (should be rejected with 400)
+      const directConfirmBypass = await call('/bookings/confirm', {
         method: 'POST',
         headers: { Authorization: `Bearer ${driver1Token}` },
-        body: JSON.stringify({ bookingId, paymentIntentId: 'pi_test_2', energyKwh, amountPaid: manipulatedAmount }),
+        body: JSON.stringify({ bookingId, paymentIntentId: 'fake_pi', paymentGateway: 'mock' }),
       });
-      const serverAmount = confirmAsOwner.body?.booking?.amountPaid;
-      const expectedAmount = Math.round(energyKwh * stationPayload.pricingPerKwh);
-      report('POST /bookings/confirm: owner can confirm their own booking', confirmAsOwner.status === 200, `status=${confirmAsOwner.status}`);
+      report('POST /bookings/confirm: direct confirmation bypass is rejected (400)', directConfirmBypass.status === 400, `status=${directConfirmBypass.status}`);
+
+      // driver1 confirms through authoritative /payments/demo-pay with manipulated amountPaid
+      const energyKwh = 10;
+      const manipulatedAmount = 1; // attacker tries to pay ₹1
+      const confirmAsOwner = await call('/payments/demo-pay', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${driver1Token}` },
+        body: JSON.stringify({ bookingId, energyKwh, amountPaid: manipulatedAmount }),
+      });
+      const serverAmount = confirmAsOwner.body?.receipt?.paidAmount || confirmAsOwner.body?.booking?.paidAmount || confirmAsOwner.body?.booking?.amountPaid;
+      const baseExpected = Math.round(energyKwh * stationPayload.pricingPerKwh);
+      const expectedAmount = baseExpected + Math.round(baseExpected * 0.18);
+      report('POST /payments/demo-pay: authoritative demo confirmation succeeds', confirmAsOwner.status === 200, `status=${confirmAsOwner.status}`);
       report(
-        'POST /bookings/confirm: server computes price server-side, ignoring manipulated amountPaid',
+        'POST /payments/demo-pay: server computes price server-side, ignoring manipulated amountPaid',
         serverAmount === expectedAmount,
         `expected ${expectedAmount}, got ${serverAmount}`
       );
