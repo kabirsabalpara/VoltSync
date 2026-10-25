@@ -267,7 +267,7 @@ router.post('/lock', authMiddleware, async (req, res) => {
         const alternative = await findAlternativeStation(station, targetSlot, connectorType);
         return res.status(409).json({
           success: false,
-          error: 'This charger has just been reserved. Please select another charger.',
+          error: 'No chargers are available for this time slot.',
           fullyBooked: true,
           alternative: alternative ? {
             _id: alternative.station._id,

@@ -182,97 +182,130 @@ async function run() {
   const testSlotTime = new Date(currentHour.getTime() + 2 * 3600000).toISOString();
   const testSlotNext = new Date(currentHour.getTime() + 3 * 3600000).toISOString();
 
-  // TEST D: User selects explicit charger and lock request contains chargerId
+  // TEST D: Driver books by selecting time slot only (no chargerId sent)
+  // Backend automatically allocates an available charger and persists it in Booking
+  const bookingFlowPath = path.resolve(__dirname, '../../frontend/src/components/BookingFlow.jsx');
+  const bookingFlowSrc = fs.readFileSync(bookingFlowPath, 'utf8');
+  const noCinemaPickerInFrontend = !bookingFlowSrc.includes('selectedChargerId') &&
+    !bookingFlowSrc.includes('charger-seat-btn') &&
+    !bookingFlowSrc.includes('Select Charger (Seat)');
+
+  assert('D.1', 'Frontend BookingFlow contains no cinema-seat charger picker or selectedChargerId state', noCinemaPickerInFrontend);
+
   const lockD = await api('/bookings/lock', {
     method: 'POST',
     headers: { Authorization: `Bearer ${driverToken}` },
     body: JSON.stringify({
       stationId: testStation._id.toString(),
-      chargerId: 'CH-A',
       slotTime: testSlotTime,
       energyKwh: 25
     })
   });
-  assert(
-    'D',
-    'User selects explicit charger and lock request assigns specified chargerId',
-    lockD.status === 201 && lockD.body?.chargerId === 'CH-A' && !!lockD.body?.lockedUntil,
-    `status=${lockD.status}, chargerId=${lockD.body?.chargerId}`
-  );
   const bookingDId = lockD.body?.bookingId || lockD.body?._id;
+  const savedBookingD = await Booking.findById(bookingDId);
 
-  // Release booking D to reset clean state for Race test
-  const relD = await api('/bookings/release', {
+  assert(
+    'D.2',
+    'Backend automatically assigns available charger when no chargerId sent, saving it in Booking',
+    lockD.status === 201 && !!lockD.body?.chargerId && savedBookingD?.chargerId === lockD.body?.chargerId && !!lockD.body?.lockedUntil,
+    `status=${lockD.status}, chargerId=${lockD.body?.chargerId}, savedChargerId=${savedBookingD?.chargerId}`
+  );
+
+  // Release booking D to reset clean state for multi-user automatic allocation test
+  await api('/bookings/release', {
     method: 'POST',
     headers: { Authorization: `Bearer ${driverToken}` },
     body: JSON.stringify({ bookingId: bookingDId })
   });
 
-  // TEST E: Two users race for same charger/time: exactly one success
-  const [raceRes1, raceRes2] = await Promise.all([
-    api('/bookings/lock', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${driverToken}` },
-      body: JSON.stringify({
-        stationId: testStation._id.toString(),
-        chargerId: 'CH-A',
-        slotTime: testSlotTime,
-        energyKwh: 20
-      })
-    }),
-    api('/bookings/lock', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${driver2Token}` },
-      body: JSON.stringify({
-        stationId: testStation._id.toString(),
-        chargerId: 'CH-A',
-        slotTime: testSlotTime,
-        energyKwh: 20
-      })
-    })
-  ]);
-
-  const raceSuccesses = [raceRes1, raceRes2].filter(r => r.status === 201).length;
-  const raceConflicts = [raceRes1, raceRes2].filter(r => r.status === 409).length;
-  assert('E', 'Two users race for same charger/time: exactly one success and one 409 conflict', raceSuccesses === 1 && raceConflicts === 1, `successes=${raceSuccesses}, conflicts=${raceConflicts}`);
-
-  const activeRaceBooking = raceRes1.status === 201 ? raceRes1.body : raceRes2.body;
-  const activeDriverToken = raceRes1.status === 201 ? driverToken : driver2Token;
-  const otherDriverToken = raceRes1.status === 201 ? driver2Token : driverToken;
-
-  // TEST F: Two users book different chargers for same time: both allowed
-  const secondChargerLock = await api('/bookings/lock', {
+  // TEST E: Two users book the same time slot with automatic allocation -> receive different chargers
+  const raceRes1 = await api('/bookings/lock', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${otherDriverToken}` },
+    headers: { Authorization: `Bearer ${driverToken}` },
     body: JSON.stringify({
       stationId: testStation._id.toString(),
-      chargerId: 'CH-B',
+      slotTime: testSlotTime,
+      energyKwh: 20
+    })
+  });
+
+  const raceRes2 = await api('/bookings/lock', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${driver2Token}` },
+    body: JSON.stringify({
+      stationId: testStation._id.toString(),
+      slotTime: testSlotTime,
+      energyKwh: 20
+    })
+  });
+
+  const bothSucceeded = raceRes1.status === 201 && raceRes2.status === 201;
+  const assignedDiffChargers = raceRes1.body?.chargerId !== raceRes2.body?.chargerId;
+  assert(
+    'E',
+    'Two users can book the same time when multiple chargers exist and receive different chargers',
+    bothSucceeded && assignedDiffChargers,
+    `res1=${raceRes1.status} (${raceRes1.body?.chargerId}), res2=${raceRes2.status} (${raceRes2.body?.chargerId})`
+  );
+
+  const activeRaceBooking = raceRes1.body;
+  const activeDriverToken = driverToken;
+  const otherDriverToken = driver2Token;
+  const secondChargerLock = raceRes2;
+
+  // TEST F: Once all usable chargers are allocated, slot becomes fully booked (0 available, 409 Conflict)
+  const driver3Email = `driver3_${stamp}@qa.com`;
+  const driver3Signup = await api('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'QA Driver Three', email: driver3Email, password: 'Password123!' })
+  });
+  const driver3Token = driver3Signup.body?.token;
+
+  // Station availability check: availableCount should be 0, isFullyBooked should be true
+  const availF = await api(`/stations/${testStation._id}/availability`);
+  const slotDataF = availF.body?.slots?.find(s => s.slotTime === testSlotTime);
+  const slotIsFull = slotDataF?.availableCount === 0 && slotDataF?.isFullyBooked === true;
+
+  const thirdLock = await api('/bookings/lock', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${driver3Token}` },
+    body: JSON.stringify({
+      stationId: testStation._id.toString(),
       slotTime: testSlotTime,
       energyKwh: 15
     })
   });
-  assert('F', 'Two users book different chargers for same time: both allowed', secondChargerLock.status === 201 && secondChargerLock.body?.chargerId === 'CH-B');
+  assert(
+    'F',
+    'Once all usable chargers are allocated, slot becomes fully booked (availableCount=0) and next lock returns 409',
+    slotIsFull && thirdLock.status === 409 && thirdLock.body?.error === 'No chargers are available for this time slot.',
+    `availableCount=${slotDataF?.availableCount}, isFullyBooked=${slotDataF?.isFullyBooked}, status=${thirdLock.status}, error=${thirdLock.body?.error}`
+  );
+
+  // Clean up driver 3 user
+  if (driver3Signup.body?.user?.id || driver3Signup.body?.user?._id) {
+    await User.deleteOne({ _id: driver3Signup.body.user.id || driver3Signup.body.user._id });
+  }
 
   // TEST G: Same user attempts two chargers at same time: second receives 409
-  // activeDriver already holds CH-A at testSlotTime; attempts to lock CH-B or another station at testSlotTime
+  // activeDriver already holds a charger at testSlotTime; attempts to lock another station at testSlotTime
   const sameUserOverlap = await api('/bookings/lock', {
     method: 'POST',
     headers: { Authorization: `Bearer ${activeDriverToken}` },
     body: JSON.stringify({
       stationId: op2Station._id.toString(),
-      chargerId: 'CH-X',
       slotTime: testSlotTime,
       energyKwh: 15
     })
   });
   assert(
     'G',
-    'Same user attempts two chargers at same time: second receives 409 with overlapping reservation error',
+    'Same user attempts two reservations at same time: second receives 409 with overlapping reservation error',
     sameUserOverlap.status === 409 && sameUserOverlap.body?.error === 'You already have a reservation during this time slot.',
     `status=${sameUserOverlap.status}, error=${sameUserOverlap.body?.error}`
   );
 
-  // Clean up secondChargerLock to free CH-B
+  // Clean up secondChargerLock to free second charger (leaving activeRaceBooking for upcoming hold/pay tests)
   if (secondChargerLock.status === 201) {
     await api('/bookings/release', {
       method: 'POST',
